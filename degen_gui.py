@@ -14,7 +14,7 @@ import scipy as sp
 
 import cv2
 import pyqtgraph as pg
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 
 __author__ = 'Alexander Tomlinson'
 __email__ = 'tomlinsa@ohsu.edu'
@@ -191,7 +191,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.checkbox_method = QtWidgets.QCheckBox('show method')
         self.checkbox_method.toggled.connect(self.on_checkbox_method)
 
-        self.image_viewer = ImageViewer(self)
+        self.image_viewer = Viewer(self)
         # hackish bad fix
         self.image_viewer.sizeHint = lambda: QtCore.QSize(600, 600)
 
@@ -254,26 +254,66 @@ class CentralWidget(QtWidgets.QWidget):
         # left panel with overview, controls, and cell views
         layout_left_panel = QtWidgets.QVBoxLayout()
 
+        max_width = 341
+
         # overview
         # TODO: subclass later
-        self.overview = ImageViewer(self)
+        self.overview = Viewer(self)
+        self.overview.setMinimumWidth(241)
+        self.overview.setMaximumHeight(300)
         layout_left_panel.addWidget(self.overview)
 
         # left panel mid controls
         layout_left_controls = QtWidgets.QVBoxLayout()
 
+        self.button_done = QtWidgets.QPushButton('Done')
+        # self.button_done.clicked.connect(self.on_button_done)
 
+        self.sel_count = QtWidgets.QLabel('Count: {} '.format(0))
+
+        layout_left_controls.addWidget(self.button_done)
+        layout_left_controls.addWidget(self.sel_count)
+        layout_left_controls.setAlignment(QtCore.Qt.AlignLeft)
 
         layout_left_panel.addLayout(layout_left_controls)
 
+        # grid of selected cells
+        scroll_area = QtWidgets.QScrollArea()
+        scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+        scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+
+        layout_grid = QtWidgets.QGridLayout()
+
+        # several test pixmaps
+        test_im = self.im[135:235, 260:360, :].copy()  # cannot be view, must be array
+        height, width, channel = test_im.shape
+        bpl = 3 * width  # bytes per line
+        qimg = QtGui.QImage(test_im.data, width, height, bpl, QtGui.QImage.Format_RGB888)
+        qpix = QtGui.QPixmap.fromImage(qimg)
+
+        pixmaps = [QtWidgets.QLabel() for i in range(30)]
+
+        # TODO: update layout on resize event
+        for idx, p in enumerate(pixmaps):
+            p.setPixmap(qpix)
+            p.setFixedSize(100, 100)
+            layout_grid.addWidget(p, idx // 2, idx % 2)  # two per row
+
+        scroll_widget = QtWidgets.QWidget()
+        scroll_widget.setLayout(layout_grid)
+
+        scroll_area.setWidget(scroll_widget)
+
+        layout_grid.setAlignment(QtCore.Qt.AlignLeft)
+
+        layout_left_panel.addWidget(scroll_area)
 
         # right side cell selector
         # TODO: subclass later
-        self.selector = ImageViewer(self)
+        self.selector = Viewer(self)
 
-        layout_selector_splitter.addLayout(layout_left_panel)
-        layout_selector_splitter.addWidget(self.selector)
-
+        layout_selector_splitter.addLayout(layout_left_panel, 1)
+        layout_selector_splitter.addWidget(self.selector, 4)
 
         return layout_selector_splitter
 
@@ -304,7 +344,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.im_process = ImageProcess(self.im)
 
         # get mask
-        m = self.im_process.get_degen_dt()
+        m = self.im_process.get_degen_mask('dt')
         c = self.im_process.get_centroids(m, min_dist=20)
 
         self.centers = c
@@ -333,7 +373,7 @@ class CentralWidget(QtWidgets.QWidget):
             self.image_viewer.set_im(self.im, clear=False)
 
 
-class ImageViewer(pg.GraphicsLayoutWidget):
+class ImageWidget(pg.GraphicsLayoutWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -362,6 +402,42 @@ class ImageViewer(pg.GraphicsLayoutWidget):
 
         :return:
         """
+        self.viewer.setImage(im)
+
+        # TODO: figure out aesthetics here
+        # x, y = im.shape[:2]
+        # self.plot.setLimits(xMin=0,
+        #                     xMax=self.viewer.width(),
+        #                     yMin=0,
+        #                     yMax=self.viewer.height()
+        #                     )
+        # self.plot.setAspectLocked()
+        # self.plot.setRange(xRange=[0,x], yRange=[0,y], padding=0)
+
+    def plot_centers(self, centers, clear=True):
+        """
+        Plots scatter plot of centroids
+
+        :param centers:
+        :return:
+        """
+        if clear:
+            self.scatter.clear()
+
+        self.scatter.setData(pos=centers)
+
+
+class Viewer(ImageWidget):
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+    def set_im(self, im=None, clear=True):
+        """
+        Updates the viewer to an image
+
+        :return:
+        """
         if im is None:
             im_path = r'\\Sivyer-rigb\d\raw_data\Confocal\681_grade 2_scale20um.tif'
             im = cv2.imread(str(Path(im_path)))
@@ -375,18 +451,7 @@ class ImageViewer(pg.GraphicsLayoutWidget):
             self.parent.checkbox_method.setChecked(False)
             self.parent.checkbox_method.blockSignals(False)
 
-        self.viewer.setImage(im)
-
-        # TODO: figure out aesthetics here
-        # x, y = im.shape[:2]
-        # self.plot.setAspectLocked(True)
-        # self.plot.setLimits(xMin=0,
-        #                     xMax=self.viewer.width(),
-                            # yMin=0,
-                            # yMax=self.viewer.height()
-                            # )
-        # self.plot.setAspectLocked()
-        # self.plot.setRange(xRange=[0,x], yRange=[0,y], padding=0)
+        super().set_im(im, clear)
 
     def on_mouse_move(self, pos):
         """
@@ -398,15 +463,6 @@ class ImageViewer(pg.GraphicsLayoutWidget):
         im_coords = self.viewer.mapFromScene(pos)
         x, y = im_coords.x(), im_coords.y()
         self.parent.status_mouse.setText('x:{:4.0f} | y:{:4.0f} '.format(x, y))
-
-    def plot_centers(self, centers):
-        """
-        Plots scatter plot of centroids
-
-        :param centers:
-        :return:
-        """
-        self.scatter.setData(pos=centers)
 
 
 def main():
