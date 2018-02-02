@@ -48,7 +48,7 @@ class ImageProcess:
         }
         assert method in method_map.keys()
 
-        return method_map[method]
+        return method_map[method]()
 
     def get_degen_dt(self, fx=0.4):
         """
