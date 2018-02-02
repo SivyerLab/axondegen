@@ -139,10 +139,10 @@ class CentralWidget(QtWidgets.QWidget):
         self.viewer_tab.setLayout(layout_viewer)
 
         # selector tab
-        # layout_selector = self.setup_selector()
+        layout_selector = self.setup_selector()
         self.sel_tab = QtWidgets.QWidget()
         self.tabs.addTab(self.sel_tab, 'Select')
-        # self.sel_tab.setLayout(layout_selector)
+        self.sel_tab.setLayout(layout_selector)
 
         # right side controls
         layout_controls = self.setup_controls()
@@ -192,6 +192,8 @@ class CentralWidget(QtWidgets.QWidget):
         self.checkbox_method.toggled.connect(self.on_checkbox_method)
 
         self.image_viewer = ImageViewer(self)
+        # hackish bad fix
+        self.image_viewer.sizeHint = lambda: QtCore.QSize(600, 600)
 
         self.image_viewer.scene().sigMouseMoved.connect(self.image_viewer.on_mouse_move)
         # self.image_viewer.scene().sigMouseClicked.connect(self.on_mouse_click)
@@ -215,7 +217,7 @@ class CentralWidget(QtWidgets.QWidget):
         """
         # TODO: factor out into separate class?
 
-        # setup controls
+        # splitter to return
         layout_control_splitter = QtWidgets.QVBoxLayout()
 
         self.checkbox_autolevel = QtWidgets.QCheckBox('check 1')
@@ -239,6 +241,41 @@ class CentralWidget(QtWidgets.QWidget):
         layout_control_splitter.setAlignment(QtCore.Qt.AlignTop)
 
         return layout_control_splitter
+
+    def setup_selector(self):
+        """
+        Sets up the selector UI for manually highlighting degen axons
+
+        :return:
+        """
+        # splitter to return
+        layout_selector_splitter = QtWidgets.QHBoxLayout()
+
+        # left panel with overview, controls, and cell views
+        layout_left_panel = QtWidgets.QVBoxLayout()
+
+        # overview
+        # TODO: subclass later
+        self.overview = ImageViewer(self)
+        layout_left_panel.addWidget(self.overview)
+
+        # left panel mid controls
+        layout_left_controls = QtWidgets.QVBoxLayout()
+
+
+
+        layout_left_panel.addLayout(layout_left_controls)
+
+
+        # right side cell selector
+        # TODO: subclass later
+        self.selector = ImageViewer(self)
+
+        layout_selector_splitter.addLayout(layout_left_panel)
+        layout_selector_splitter.addWidget(self.selector)
+
+
+        return layout_selector_splitter
 
     def on_menu_file_open(self):
         """
@@ -318,9 +355,6 @@ class ImageViewer(pg.GraphicsLayoutWidget):
         # TODO: remove after done
         self.set_im()
         self.plot.addItem(self.scatter)
-
-    def sizeHint(self):
-        return QtCore.QSize(600, 600)
 
     def set_im(self, im=None, clear=True):
         """
