@@ -21,7 +21,7 @@ __email__ = 'tomlinsa@ohsu.edu'
 __version__ = '0.0.1'
 
 # setup logging
-logger = logging.getLogger('gridcreator')
+logger = logging.getLogger('AxonDegen')
 logger.setLevel(logging.INFO)
 
 logger_handler = logging.StreamHandler(sys.stdout)
@@ -61,7 +61,7 @@ class Frame(QtWidgets.QMainWindow):
         super(Frame, self).__init__(parent)
 
         # self.setGeometry(100, 100, 600, 500)
-        self.setWindowTitle('CRC OCT-Overlay')
+        self.setWindowTitle('Axon Degeneration')
 
         self.menubar = self.create_menu_bar()
         self.statusbar = self.create_status_bar()
@@ -121,9 +121,15 @@ class CentralWidget(QtWidgets.QWidget):
         """
         super(CentralWidget, self).__init__(parent)
         self.frame = parent
+
         self.im = None
         self.im_process = None
         self.centers = None
+
+        self.current_view = 'im'
+
+        self.thresh_value = 125
+        self.fx_value = 6
 
         # setup status and menu bars
         self.setup_status_bar()
@@ -191,6 +197,12 @@ class CentralWidget(QtWidgets.QWidget):
         self.checkbox_method = QtWidgets.QCheckBox('show method')
         self.checkbox_method.toggled.connect(self.on_checkbox_method)
 
+        self.checkbox_binary = QtWidgets.QCheckBox('show binary')
+        self.checkbox_binary.toggled.connect(self.on_checkbox_binary)
+
+        self.checkbox_result = QtWidgets.QCheckBox('show result')
+        self.checkbox_result.toggled.connect(self.on_checkbox_result)
+
         self.image_viewer = Viewer(self)
         # hackish bad fix
         self.image_viewer.sizeHint = lambda: QtCore.QSize(600, 600)
@@ -204,6 +216,8 @@ class CentralWidget(QtWidgets.QWidget):
 
         button_splitter.addStretch()
         button_splitter.addWidget(self.checkbox_method)
+        button_splitter.addWidget(self.checkbox_binary)
+        button_splitter.addWidget(self.checkbox_result)
 
         viewer_splitter.addLayout(button_splitter)
 
@@ -220,14 +234,14 @@ class CentralWidget(QtWidgets.QWidget):
         # splitter to return
         layout_control_splitter = QtWidgets.QVBoxLayout()
 
-        self.checkbox_autolevel = QtWidgets.QCheckBox('check 1')
+        # self.checkbox_autolevel = QtWidgets.QCheckBox('check 1')
         # self.checkbox_autolevel.setChecked(True)
-        layout_control_splitter.addWidget(self.checkbox_autolevel)
+        # layout_control_splitter.addWidget(self.checkbox_autolevel)
         # self.checkbox_autolevel.stateChanged.connect(self.on_checkbox_autolevel)
 
-        self.checkbox_threshold = QtWidgets.QCheckBox('check 2')
+        # self.checkbox_threshold = QtWidgets.QCheckBox('check 2')
         # self.checkbox_threshold.setChecked(True)
-        layout_control_splitter.addWidget(self.checkbox_threshold)
+        # layout_control_splitter.addWidget(self.checkbox_threshold)
         # self.checkbox_threshold.stateChanged.connect(self.on_checkbox_threshold)
 
         self.button_find_degen = QtWidgets.QPushButton('find degen')
@@ -238,9 +252,38 @@ class CentralWidget(QtWidgets.QWidget):
         layout_control_splitter.addWidget(self.button_overlay)
         # self.button_overlay.clicked.connect(self.on_button_overlay)
 
+        layout_slider_threshold = self.setup_slider_threshold()
+
+        layout_sliders = QtWidgets.QHBoxLayout()
+        layout_sliders.addLayout(layout_slider_threshold)
+
+        layout_control_splitter.addLayout(layout_sliders)
+
         layout_control_splitter.setAlignment(QtCore.Qt.AlignTop)
 
         return layout_control_splitter
+
+    def setup_slider_threshold(self):
+        """
+        Sets up the slider for opacity
+        :return: layout with slider and opacity
+        """
+        self.slider_threshold = QtGui.QSlider(QtCore.Qt.Vertical)
+        self.slider_threshold.setMinimum(0)
+        self.slider_threshold.setMaximum(255)
+        self.slider_threshold.setValue(self.thresh_value)
+        self.slider_threshold.setTickPosition(QtGui.QSlider.TicksRight)
+        self.slider_threshold.setTickInterval(64)
+        self.slider_threshold.valueChanged.connect(self.on_slider_threshold)
+
+        value = self.thresh_value
+        self.label_slider_threshold = QtGui.QLabel('{}'.format(value))  # TODO: fix resize at 100%
+
+        layout_slider_label = QtGui.QVBoxLayout()
+        layout_slider_label.addWidget(self.slider_threshold)
+        layout_slider_label.addWidget(self.label_slider_threshold)
+
+        return layout_slider_label
 
     def setup_selector(self):
         """
@@ -258,7 +301,8 @@ class CentralWidget(QtWidgets.QWidget):
 
         # overview
         # TODO: subclass later
-        self.overview = Viewer(self)
+        self.overview = OverViewer(self)
+
         self.overview.setMinimumWidth(241)
         self.overview.setMaximumHeight(300)
         layout_left_panel.addWidget(self.overview)
@@ -269,10 +313,10 @@ class CentralWidget(QtWidgets.QWidget):
         self.button_done = QtWidgets.QPushButton('Done')
         # self.button_done.clicked.connect(self.on_button_done)
 
-        self.sel_count = QtWidgets.QLabel('Count: {} '.format(0))
+        self.degen_count = QtWidgets.QLabel('Count: {} '.format(0))
 
         layout_left_controls.addWidget(self.button_done)
-        layout_left_controls.addWidget(self.sel_count)
+        layout_left_controls.addWidget(self.degen_count)
         layout_left_controls.setAlignment(QtCore.Qt.AlignLeft)
 
         layout_left_panel.addLayout(layout_left_controls)
@@ -310,7 +354,7 @@ class CentralWidget(QtWidgets.QWidget):
 
         # right side cell selector
         # TODO: subclass later
-        self.selector = Viewer(self)
+        self.selector = SelectorViewer(self)
 
         layout_selector_splitter.addLayout(layout_left_panel, 1)
         layout_selector_splitter.addWidget(self.selector, 4)
@@ -337,19 +381,26 @@ class CentralWidget(QtWidgets.QWidget):
 
     def on_button_find_degen(self):
         """
-        Handles getting degen centers
+        Handles getting degenerated centers
 
         :return:
         """
         self.im_process = ImageProcess(self.im)
 
         # get mask
-        m = self.im_process.get_degen_mask('dt')
-        c = self.im_process.get_centroids(m, min_dist=20)
+        m = self.im_process.get_degen_mask('dt', thresh=self.thresh_value)
+        c = self.im_process.get_centroids(m, min_dist=30)
 
         self.centers = c
 
         self.status_count.setText('Count: {} '.format(len(c)))
+
+        if self.current_view == 'binary':
+            self.image_viewer.set_im(self.im_process.binary_im)
+        elif self.current_view == 'method':
+            self.image_viewer.set_im(self.im_process.method)
+        elif self.current_view == 'result':
+            self.image_viewer.set_im(self.im_process.result)
 
         self.image_viewer.plot_centers(self.centers)
 
@@ -361,8 +412,19 @@ class CentralWidget(QtWidgets.QWidget):
         """
         if self.checkbox_method.isChecked():
             if self.im_process is not None:
-                if self.im_process.method_im is not None:
-                    self.image_viewer.set_im(self.im_process.method_im, clear=False)
+                if self.im_process.method is not None:
+                    self.image_viewer.set_im(self.im_process.method, clear=False)
+
+                    self.checkbox_binary.blockSignals(True)
+                    self.checkbox_binary.setChecked(False)
+                    self.checkbox_binary.blockSignals(False)
+
+                    self.checkbox_result.blockSignals(True)
+                    self.checkbox_result.setChecked(False)
+                    self.checkbox_result.blockSignals(False)
+
+                    self.current_view = 'method'
+
                     return
 
             self.checkbox_method.blockSignals(True)
@@ -371,6 +433,80 @@ class CentralWidget(QtWidgets.QWidget):
 
         else:
             self.image_viewer.set_im(self.im, clear=False)
+            self.current_view = 'im'
+
+    def on_checkbox_binary(self):
+        """
+        Handles switching to method view
+
+        :return:
+        """
+        if self.checkbox_binary.isChecked():
+            if self.im_process is not None:
+                if self.im_process.thresh is not None:
+                    self.image_viewer.set_im(self.im_process.thresh, clear=False)
+
+                    self.checkbox_method.blockSignals(True)
+                    self.checkbox_method.setChecked(False)
+                    self.checkbox_method.blockSignals(False)
+
+                    self.checkbox_result.blockSignals(True)
+                    self.checkbox_result.setChecked(False)
+                    self.checkbox_result.blockSignals(False)
+
+                    self.current_view = 'binary'
+
+                    return
+
+            self.checkbox_binary.blockSignals(True)
+            self.checkbox_binary.setChecked(False)
+            self.checkbox_binary.blockSignals(False)
+
+        else:
+            self.image_viewer.set_im(self.im, clear=False)
+            self.current_view = 'im'
+
+    def on_checkbox_result(self):
+        """
+        Handles switching to result view
+
+        :return:
+        """
+        if self.checkbox_result.isChecked():
+            if self.im_process is not None:
+                if self.im_process.result is not None:
+                    self.image_viewer.set_im(self.im_process.result, clear=False)
+
+                    self.checkbox_binary.blockSignals(True)
+                    self.checkbox_binary.setChecked(False)
+                    self.checkbox_binary.blockSignals(False)
+
+                    self.checkbox_method.blockSignals(True)
+                    self.checkbox_method.setChecked(False)
+                    self.checkbox_method.blockSignals(False)
+
+                    self.current_view = 'result'
+
+                    return
+
+            self.checkbox_result.blockSignals(True)
+            self.checkbox_result.setChecked(False)
+            self.checkbox_result.blockSignals(False)
+
+        else:
+            self.image_viewer.set_im(self.im, clear=False)
+            self.current_view = 'im'
+
+    def on_slider_threshold(self):
+        """
+        Changes the opacity of the overlay
+        """
+        value = self.slider_threshold.value()
+        self.thresh_value = value
+
+        self.label_slider_threshold.setText('{}'.format(value))
+
+        self.on_button_find_degen()
 
 
 class ImageWidget(pg.GraphicsLayoutWidget):
@@ -390,11 +526,13 @@ class ImageWidget(pg.GraphicsLayoutWidget):
         self.plot.addItem(self.viewer)
         self.plot.setAspectLocked(True)
 
+        # TODO: move scatter to right spot
         c = (255, 0, 0, 128)
         self.scatter = pg.ScatterPlotItem(pen=c, symbolBrush=c, symbolPen='w', symbol='+', symbolSize=14)
+        self.plot.addItem(self.scatter)
+
         # TODO: remove after done
         self.set_im()
-        self.plot.addItem(self.scatter)
 
     def set_im(self, im=None, clear=True):
         """
@@ -424,7 +562,8 @@ class ImageWidget(pg.GraphicsLayoutWidget):
         if clear:
             self.scatter.clear()
 
-        self.scatter.setData(pos=centers)
+        if len(centers):
+            self.scatter.setData(pos=centers)
 
 
 class Viewer(ImageWidget):
@@ -439,8 +578,10 @@ class Viewer(ImageWidget):
         :return:
         """
         if im is None:
-            im_path = r'\\Sivyer-rigb\d\raw_data\Confocal\681_grade 2_scale20um.tif'
-            im = cv2.imread(str(Path(im_path)))
+            im_path = r'C:\Users\Alex\Downloads\morrison_slides\tifs\slide01\raw\slide01_section1_area17.tif'
+            im_path = Path(im_path)
+            assert im_path.exists()
+            im = cv2.imread(str(im_path))
             self.parent.im = im
 
         if clear:
@@ -463,6 +604,131 @@ class Viewer(ImageWidget):
         im_coords = self.viewer.mapFromScene(pos)
         x, y = im_coords.x(), im_coords.y()
         self.parent.status_mouse.setText('x:{:4.0f} | y:{:4.0f} '.format(x, y))
+
+
+class OverViewer(Viewer):
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+        self.grid_coord = (0, 0)
+        self.spacing = 400
+
+        self.grid = None
+        self.draw_grid(self.spacing)
+
+    def set_im(self, im=None, clear=True):
+        """
+        Updates the viewer to an image
+
+        :return:
+        """
+        self.viewer.setImage(self.parent.im)
+
+    def draw_grid(self, spacing):
+        """
+        Updates the viewer to an image
+
+        :return:
+        """
+        if self.grid is not None:
+            self.plot.removeItem(self.grid)
+
+        width, height= self.parent.im.shape[:2]
+        print(width, height)
+        spacing_x, spacing_y = spacing, spacing
+
+        self.grid = GridSegmentItem(spacing_x, spacing_y, width, height)
+        self.plot.addItem(self.grid)
+
+    def on_mouse_move(self, pos):
+        """
+        Updates the mouse pos in status bar
+
+        :param pos:
+        :return:
+        """
+    #     im_coords = self.viewer.mapFromScene(pos)
+    #     x, y = im_coords.x(), im_coords.y()
+    #     self.parent.status_mouse.setText('x:{:4.0f} | y:{:4.0f} '.format(x, y))
+
+
+class SelectorViewer(Viewer):
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+
+        self.sub_im = None
+
+    def set_im(self, im=None, clear=True):
+        """
+        Sets image based on overviewer
+
+        :param im:
+        :param clear:
+        :return:
+        """
+        ov = self.parent.overview
+        dx, dy = ov.grid_coord
+        spacing = ov.spacing
+
+        x1, x2 = spacing*dx, spacing*(dx+1)
+        y1, y2 = spacing*dy, spacing*(dy+1)
+
+        self.sub_im = self.parent.im[x1:x2, y1:y2]
+        self.viewer.setImage(self.sub_im)
+
+    def on_mouse_click(self, pos):
+        """
+        Updates the mouse pos in status bar
+
+        :param pos:
+        :return:
+        """
+        im_coords = self.viewer.mapFromScene(pos)
+        x, y = im_coords.x(), im_coords.y()
+        print(x, y)
+
+
+class GridSegmentItem(pg.GraphicsObject):
+    """
+    Draws a pyqtgraph line segment
+    """
+    def __init__(self, spacing_x, spacing_y, width, height):
+        pg.GraphicsObject.__init__(self)
+
+        self.spacing_x = spacing_x
+        self.spacing_y = spacing_y
+        self.width = width
+        self.height = height
+
+        self.num_x = self.width // self.spacing_x + 1
+        self.num_y = self.height // self.spacing_y + 1
+
+        self.generatePicture()
+
+    def generatePicture(self):
+        self.picture = QtGui.QPicture()
+        p = QtGui.QPainter(self.picture)
+        p.setPen(pg.mkPen('r'))
+
+        for i in range(self.num_x):
+            x = self.spacing_x * i
+            p.drawLine(QtCore.QPoint(x, 0), QtCore.QPoint(x, self.height))
+        p.drawLine(QtCore.QPoint(self.width, 0), QtCore.QPoint(self.width, self.height))
+
+        for i in range(self.num_y):
+            y = self.spacing_y * i
+            p.drawLine(QtCore.QPoint(0, y), QtCore.QPoint(self.width, y))
+        p.drawLine(QtCore.QPoint(0, self.height), QtCore.QPoint(self.width, self.height))
+
+        p.end()
+
+    def paint(self, p, *args):
+        p.drawPicture(0, 0, self.picture)
+
+    def boundingRect(self):
+        return QtCore.QRectF(self.picture.boundingRect())
 
 
 def main():

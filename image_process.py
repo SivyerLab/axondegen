@@ -38,7 +38,7 @@ class ImageProcess:
 
         self.thresh = None
         self.method = None
-        self.mask = None
+        self.result = None
 
     def get_thresh(self, method='thresh', thresh=125):
         """
@@ -104,7 +104,7 @@ class ImageProcess:
         # _, markers = cv2.connectedComponents(sure_fg_morph)
 
         self.method = dist_transform
-        self.mask = sure_fg_morph
+        self.result = sure_fg_morph
 
         return sure_fg_morph
 
