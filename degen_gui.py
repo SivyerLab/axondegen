@@ -194,11 +194,11 @@ class CentralWidget(QtWidgets.QWidget):
         """
         viewer_splitter = QtWidgets.QVBoxLayout()
 
-        self.checkbox_method = QtWidgets.QCheckBox('show method')
-        self.checkbox_method.toggled.connect(self.on_checkbox_method)
-
         self.checkbox_binary = QtWidgets.QCheckBox('show binary')
         self.checkbox_binary.toggled.connect(self.on_checkbox_binary)
+
+        self.checkbox_method = QtWidgets.QCheckBox('show method')
+        self.checkbox_method.toggled.connect(self.on_checkbox_method)
 
         self.checkbox_result = QtWidgets.QCheckBox('show result')
         self.checkbox_result.toggled.connect(self.on_checkbox_result)
@@ -215,8 +215,8 @@ class CentralWidget(QtWidgets.QWidget):
         button_splitter = QtWidgets.QHBoxLayout()
 
         button_splitter.addStretch()
-        button_splitter.addWidget(self.checkbox_method)
         button_splitter.addWidget(self.checkbox_binary)
+        button_splitter.addWidget(self.checkbox_method)
         button_splitter.addWidget(self.checkbox_result)
 
         viewer_splitter.addLayout(button_splitter)
@@ -396,7 +396,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.status_count.setText('Count: {} '.format(len(c)))
 
         if self.current_view == 'binary':
-            self.image_viewer.set_im(self.im_process.binary_im)
+            self.image_viewer.set_im(self.im_process.thresh)
         elif self.current_view == 'method':
             self.image_viewer.set_im(self.im_process.method)
         elif self.current_view == 'result':
