@@ -40,7 +40,7 @@ class ImageProcess:
         self.method = None
         self.result = None
 
-    def get_thresh(self, method='thresh', thresh=125):
+    def get_thresh(self, method='thresh', thresh=125, low_thresh=0):
         """
         Gets the threshed image
 
@@ -51,14 +51,20 @@ class ImageProcess:
         if method not in methods:
             raise AttributeError('Incorred method selected: {}. Supported methods are: {}'.format(method, ', '.join(methods)))
 
+        to_thresh = self.gauss
+
+        if low_thresh > 0:
+            _, to_thresh = cv2.threshold(self.gauss, 115, 255, cv2.THRESH_TOZERO)
+            to_thresh[to_thresh == 0] = 255
+
         if method == 'thresh':
-            _, threshed = cv2.threshold(self.gauss, thresh, 255, cv2.THRESH_BINARY_INV)
+            _, threshed = cv2.threshold(to_thresh, thresh, 255, cv2.THRESH_BINARY_INV)
         if method == 'otsu':
-            _, threshed = cv2.threshold(self.gauss, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            _, threshed = cv2.threshold(to_thresh, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         if method == 'gauss':
-            threshed = cv2.adaptiveThreshold(self.gauss, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+            threshed = cv2.adaptiveThreshold(to_thresh, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2)
         if method == 'mean':
-            threshed = cv2.adaptiveThreshold(self.gauss, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
+            threshed = cv2.adaptiveThreshold(to_thresh, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 11, 2)
 
         # clean up noise
         morph = cv2.morphologyEx(threshed, cv2.MORPH_OPEN, self.noise_kernel_2, iterations=1)
@@ -88,7 +94,7 @@ class ImageProcess:
         :param thresh: thresholding cutoff
         :return:
         """
-        threshed = self.get_thresh(method='thresh', thresh=thresh)
+        threshed = self.get_thresh(method='thresh', thresh=thresh, low_thresh=115)
 
         # do distance transform
         dist_transform = cv2.distanceTransform(threshed, cv2.DIST_L2, 5)
@@ -108,7 +114,7 @@ class ImageProcess:
 
         return sure_fg_morph
 
-    def get_centroids(self, mask, min_dist=0):
+    def get_centroids(self, mask, min_dist=30):
         """
         Calculates the center points of masked areas, and optionally throws out points
         that are too close to another point
