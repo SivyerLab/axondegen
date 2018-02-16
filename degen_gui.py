@@ -7,14 +7,13 @@ import sys
 import traceback as tb
 from pathlib import Path
 
-from image_process import ImageProcess
-
+import cv2
 import numpy as np
 import scipy as sp
-
-import cv2
 import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
+
+from image_process import ImageProcess
 
 __author__ = 'Alexander Tomlinson'
 __email__ = 'tomlinsa@ohsu.edu'
