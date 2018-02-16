@@ -150,6 +150,8 @@ class CentralWidget(QtWidgets.QWidget):
         self.tabs.addTab(self.sel_tab, 'Select')
         self.sel_tab.setLayout(layout_selector)
 
+        self.image_viewer.set_im(None)
+
         # right side controls
         layout_controls = self.setup_controls()
 
@@ -203,7 +205,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.checkbox_result = QtWidgets.QCheckBox('show result')
         self.checkbox_result.toggled.connect(self.on_checkbox_result)
 
-        self.image_viewer = Viewer(self)
+        self.image_viewer = GenericViewer(self)
         # hackish bad fix
         self.image_viewer.sizeHint = lambda: QtCore.QSize(600, 600)
 
@@ -307,11 +309,13 @@ class CentralWidget(QtWidgets.QWidget):
         self.overview.setMaximumHeight(300)
         layout_left_panel.addWidget(self.overview)
 
+        self.overview.scene().sigMouseClicked.connect(self.overview.on_mouse_click)
+
         # left panel mid controls
         layout_left_controls = QtWidgets.QVBoxLayout()
 
         self.button_done = QtWidgets.QPushButton('Done')
-        # self.button_done.clicked.connect(self.on_button_done)
+        self.button_done.clicked.connect(self.overview.on_button_done)
 
         self.degen_count = QtWidgets.QLabel('Count: {} '.format(0))
 
@@ -328,20 +332,21 @@ class CentralWidget(QtWidgets.QWidget):
 
         layout_grid = QtWidgets.QGridLayout()
 
+        # TODO: make class
         # several test pixmaps
-        test_im = self.im[135:235, 260:360, :].copy()  # cannot be view, must be array
-        height, width, channel = test_im.shape
-        bpl = 3 * width  # bytes per line
-        qimg = QtGui.QImage(test_im.data, width, height, bpl, QtGui.QImage.Format_RGB888)
-        qpix = QtGui.QPixmap.fromImage(qimg)
-
-        pixmaps = [QtWidgets.QLabel() for i in range(30)]
-
-        # TODO: update layout on resize event
-        for idx, p in enumerate(pixmaps):
-            p.setPixmap(qpix)
-            p.setFixedSize(100, 100)
-            layout_grid.addWidget(p, idx // 2, idx % 2)  # two per row
+        # test_im = self.im[135:235, 260:360, :].copy()  # cannot be view, must be array
+        # height, width, channel = test_im.shape
+        # bpl = 3 * width  # bytes per line
+        # qimg = QtGui.QImage(test_im.data, width, height, bpl, QtGui.QImage.Format_RGB888)
+        # qpix = QtGui.QPixmap.fromImage(qimg)
+        #
+        # pixmaps = [QtWidgets.QLabel() for i in range(30)]
+        #
+        # # TODO: update layout on resize event
+        # for idx, p in enumerate(pixmaps):
+        #     p.setPixmap(qpix)
+        #     p.setFixedSize(100, 100)
+        #     layout_grid.addWidget(p, idx // 2, idx % 2)  # two per row
 
         scroll_widget = QtWidgets.QWidget()
         scroll_widget.setLayout(layout_grid)
@@ -531,9 +536,6 @@ class ImageWidget(pg.GraphicsLayoutWidget):
         self.scatter = pg.ScatterPlotItem(pen=c, symbolBrush=c, symbolPen='w', symbol='+', symbolSize=14)
         self.plot.addItem(self.scatter)
 
-        # TODO: remove after done
-        self.set_im()
-
     def set_im(self, im=None, clear=True):
         """
         Updates the viewer to an image
@@ -566,7 +568,7 @@ class ImageWidget(pg.GraphicsLayoutWidget):
             self.scatter.setData(pos=centers)
 
 
-class Viewer(ImageWidget):
+class GenericViewer(ImageWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -578,7 +580,7 @@ class Viewer(ImageWidget):
         :return:
         """
         if im is None:
-            im_path = r'C:\Users\Alex\Downloads\morrison_slides\tifs\slide01\raw\slide01_section1_area17.tif'
+            im_path = r'C:\Users\Alex\Downloads\morrison_slides\tifs\slide01\raw\slide01_section1_area08.tif'
             im_path = Path(im_path)
             assert im_path.exists()
             im = cv2.imread(str(im_path))
@@ -594,6 +596,10 @@ class Viewer(ImageWidget):
 
         super().set_im(im, clear)
 
+        self.parent.overview.grid_coord = (0, 0)
+        self.parent.overview.set_im()
+        self.parent.selector.set_im()
+
     def on_mouse_move(self, pos):
         """
         Updates the mouse pos in status bar
@@ -606,16 +612,16 @@ class Viewer(ImageWidget):
         self.parent.status_mouse.setText('x:{:4.0f} | y:{:4.0f} '.format(x, y))
 
 
-class OverViewer(Viewer):
+class OverViewer(GenericViewer):
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
 
         self.grid_coord = (0, 0)
-        self.spacing = 400
+        self.spacing = 500
 
         self.grid = None
-        self.draw_grid(self.spacing)
+        self.grid_flags = None
 
     def set_im(self, im=None, clear=True):
         """
@@ -624,6 +630,7 @@ class OverViewer(Viewer):
         :return:
         """
         self.viewer.setImage(self.parent.im)
+        self.draw_grid(self.spacing)
 
     def draw_grid(self, spacing):
         """
@@ -635,25 +642,40 @@ class OverViewer(Viewer):
             self.plot.removeItem(self.grid)
 
         width, height= self.parent.im.shape[:2]
-        print(width, height)
         spacing_x, spacing_y = spacing, spacing
 
         self.grid = GridSegmentItem(spacing_x, spacing_y, width, height)
         self.plot.addItem(self.grid)
 
-    def on_mouse_move(self, pos):
+        self.grid_flags = np.full((self.grid.num_x, self.grid.num_y), fill_value=False, dtype=bool)
+
+    def on_mouse_click(self, pos):
         """
         Updates the mouse pos in status bar
 
         :param pos:
         :return:
         """
-    #     im_coords = self.viewer.mapFromScene(pos)
-    #     x, y = im_coords.x(), im_coords.y()
-    #     self.parent.status_mouse.setText('x:{:4.0f} | y:{:4.0f} '.format(x, y))
+        im_coords = self.viewer.mapFromScene(pos.scenePos())
+        x, y = im_coords.x(), im_coords.y()
+
+        im_x, im_y = self.parent.im.shape[:2]
+
+        if 0 <= x <= im_x and 0 <= y <= im_y:
+            self.grid_coord = (x // self.spacing, y // self.spacing)
+            self.grid_coord = tuple(map(int, self.grid_coord))
+
+            self.parent.selector.set_im()
+            self.grid_flags[self.grid_coord] = False
+
+    def on_button_done(self):
+        """
+        Updates the flag status of the overview grid
+        """
+        self.grid_flags[self.grid_coord] = True
 
 
-class SelectorViewer(Viewer):
+class SelectorViewer(GenericViewer):
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -675,19 +697,8 @@ class SelectorViewer(Viewer):
         x1, x2 = spacing*dx, spacing*(dx+1)
         y1, y2 = spacing*dy, spacing*(dy+1)
 
-        self.sub_im = self.parent.im[x1:x2, y1:y2]
+        self.sub_im = self.parent.im[y1:y2, x1:x2]
         self.viewer.setImage(self.sub_im)
-
-    def on_mouse_click(self, pos):
-        """
-        Updates the mouse pos in status bar
-
-        :param pos:
-        :return:
-        """
-        im_coords = self.viewer.mapFromScene(pos)
-        x, y = im_coords.x(), im_coords.y()
-        print(x, y)
 
 
 class GridSegmentItem(pg.GraphicsObject):
