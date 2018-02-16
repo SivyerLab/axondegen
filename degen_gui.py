@@ -30,7 +30,7 @@ logger.addHandler(logger_handler)
 
 
 # setup exception handler:
-# PyQt4 would print errors to IDE console and suppress them, but
+# PyQt4 would print errors to console and suppress them, but
 # PyQt5 just terminates without printing a traceback
 
 def except_hook(type, value, traceback, frame):
@@ -179,9 +179,6 @@ class CentralWidget(QtWidgets.QWidget):
         """
         menu_file = self.frame.menubar.addMenu('File')
 
-        # symmetry sub menu
-        # symmetry_menu = QtWidgets.QMenu('Symmetry', self)
-
         file_open = QtWidgets.QAction('Open', self, statusTip='Open image in viewer', shortcut='Ctrl+O')
         file_open.triggered.connect(self.on_menu_file_open)
 
@@ -278,7 +275,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.slider_threshold.valueChanged.connect(self.on_slider_threshold)
 
         value = self.thresh_value
-        self.label_slider_threshold = QtGui.QLabel('{}'.format(value))  # TODO: fix resize at 100%
+        self.label_slider_threshold = QtGui.QLabel('{}'.format(value))
 
         layout_slider_label = QtGui.QVBoxLayout()
         layout_slider_label.addWidget(self.slider_threshold)
@@ -301,7 +298,6 @@ class CentralWidget(QtWidgets.QWidget):
         max_width = 341
 
         # overview
-        # TODO: subclass later
         self.overview = OverViewer(self)
 
         self.overview.setMinimumWidth(241)
@@ -329,26 +325,13 @@ class CentralWidget(QtWidgets.QWidget):
         scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
         scroll_area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
 
+        self.selected = SelectedViewer(self)
+        selected_layout = self.selected.get_layout()
+
         layout_grid = QtWidgets.QGridLayout()
 
-        # TODO: make class
-        # several test pixmaps
-        # test_im = self.im[135:235, 260:360, :].copy()  # cannot be view, must be array
-        # height, width, channel = test_im.shape
-        # bpl = 3 * width  # bytes per line
-        # qimg = QtGui.QImage(test_im.data, width, height, bpl, QtGui.QImage.Format_RGB888)
-        # qpix = QtGui.QPixmap.fromImage(qimg)
-        #
-        # pixmaps = [QtWidgets.QLabel() for i in range(30)]
-        #
-        # # TODO: update layout on resize event
-        # for idx, p in enumerate(pixmaps):
-        #     p.setPixmap(qpix)
-        #     p.setFixedSize(100, 100)
-        #     layout_grid.addWidget(p, idx // 2, idx % 2)  # two per row
-
         scroll_widget = QtWidgets.QWidget()
-        scroll_widget.setLayout(layout_grid)
+        scroll_widget.setLayout(selected_layout)
 
         scroll_area.setWidget(scroll_widget)
 
@@ -357,7 +340,6 @@ class CentralWidget(QtWidgets.QWidget):
         layout_left_panel.addWidget(scroll_area)
 
         # right side cell selector
-        # TODO: subclass later
         self.selector = SelectorViewer(self)
 
         layout_selector_splitter.addLayout(layout_left_panel, 1)
@@ -640,13 +622,14 @@ class OverViewer(GenericViewer):
         if self.grid is not None:
             self.plot.removeItem(self.grid)
 
-        width, height= self.parent.im.shape[:2]
+        height, width = self.parent.im.shape[:2]
         spacing_x, spacing_y = spacing, spacing
 
         self.grid = GridSegmentItem(spacing_x, spacing_y, width, height)
         self.plot.addItem(self.grid)
 
-        self.grid_flags = np.full((self.grid.num_x, self.grid.num_y), fill_value=False, dtype=bool)
+        self.grid_flags = np.full((self.grid.num_y, self.grid.num_x), fill_value=False, dtype=bool)
+        self.selected = np.array((self.grid.num_y, self.grid.num_x, 1), dtype=list)
 
     def on_mouse_click(self, pos):
         """
@@ -673,6 +656,31 @@ class OverViewer(GenericViewer):
         """
         self.grid_flags[self.grid_coord] = True
 
+        # move to next not done grid
+        # but first get current position
+        start = np.ravel_multi_index(self.grid_coord, self.grid_flags.shape)
+
+        r = self.grid_flags.ravel(order='F')
+        idx = np.where(r == False)[0]  # idxs of Trues
+
+        i = np.where(idx > start)
+        i = i[0]
+        i = i[0]
+        idx = idx[i]  # first idx greater that start
+
+        # TODO: fix order
+        idx = np.unravel_index(idx, (self.grid_flags.shape), order='F')
+        print()
+        print(self.grid_coord, idx)
+        print(self.grid_flags)
+        self.grid_coord = idx
+        self.parent.selector.set_im()
+
+
+
+        # TEMP
+        # self.parent.selected.update_grid()
+
 
 class SelectorViewer(GenericViewer):
 
@@ -698,6 +706,44 @@ class SelectorViewer(GenericViewer):
 
         self.sub_im = self.parent.im[y1:y2, x1:x2]
         self.viewer.setImage(self.sub_im)
+
+
+# TODO: make this work
+class SelectedViewer:
+    """
+    Grid viewer for selected axons
+    """
+    def __init__(self, parent):
+
+        self.parent = parent
+
+    def get_layout(self):
+        """
+        Generates the layout to pass to the scroll area
+        """
+        self.layout_grid = QtWidgets.QGridLayout()
+
+        return self.layout_grid
+
+    def update_grid(self):
+        """
+        Draws the pixmaps
+        """
+        # several test pixmaps
+        test_im = self.parent.selector.sub_im[0:100, 0:100, :].copy()  # cannot be view, must be array
+        height, width, channel = test_im.shape
+
+        bpl = 3 * width  # bytes per line
+        qimg = QtGui.QImage(test_im.data, width, height, bpl, QtGui.QImage.Format_RGB888)
+        qpix = QtGui.QPixmap.fromImage(qimg)
+
+        pixmaps = [QtWidgets.QLabel() for i in range(30)]
+
+        # TODO: update layout on resize event
+        for idx, p in enumerate(pixmaps):
+            p.setPixmap(qpix)
+            p.setFixedSize(100, 100)
+            self.layout_grid.addWidget(p, idx // 2, idx % 2)  # two per row
 
 
 class GridSegmentItem(pg.GraphicsObject):
