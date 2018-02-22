@@ -658,9 +658,10 @@ class OverViewer(GenericViewer):
 
         # move to next not done grid
         # but first get current position
-        start = np.ravel_multi_index(self.grid_coord, self.grid_flags.shape)
+        order = 'F'
+        start = np.ravel_multi_index(self.grid_coord, self.grid_flags.shape, order=order)
 
-        r = self.grid_flags.ravel(order='F')
+        r = self.grid_flags.ravel(order=order)
         idx = np.where(r == False)[0]  # idxs of Trues
 
         i = np.where(idx > start)
@@ -669,7 +670,7 @@ class OverViewer(GenericViewer):
         idx = idx[i]  # first idx greater that start
 
         # TODO: fix order
-        idx = np.unravel_index(idx, (self.grid_flags.shape), order='F')
+        idx = np.unravel_index(idx, (self.grid_flags.shape), order=order)
         print()
         print(self.grid_coord, idx)
         print(self.grid_flags)
