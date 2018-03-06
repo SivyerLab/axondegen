@@ -577,6 +577,7 @@ class GenericViewer(ImageWidget):
 
         super().set_im(im, clear)
 
+        # TODO: make this not reset grids if not new image
         self.parent.overview.grid_coord = (0, 0)
         self.parent.overview.set_im()
         self.parent.selector.set_im()
@@ -599,10 +600,11 @@ class OverViewer(GenericViewer):
         super().__init__(parent=parent)
 
         self.grid_coord = (0, 0)
-        self.spacing = 500
+        self.spacing = 550
 
         self.grid = None
-        self.grid_flags = None
+        self.grid_rects = None
+        self.grid_fills = None
 
     def set_im(self, im=None, clear=True):
         """
@@ -611,25 +613,65 @@ class OverViewer(GenericViewer):
         :return:
         """
         self.viewer.setImage(self.parent.im)
-        self.draw_grid(self.spacing)
+        self.draw_grid()
 
-    def draw_grid(self, spacing):
+        self.grid_flags = np.full((self.grid.num_y, self.grid.num_x), fill_value=False, dtype=bool)
+        # self.selected = np.array((self.grid.num_y, self.grid.num_x, 1), dtype=list)
+
+    def draw_grid(self):
         """
-        Updates the viewer to an image
-
-        :return:
+        Draws the original grid and grid fills
         """
         if self.grid is not None:
             self.plot.removeItem(self.grid)
 
         height, width = self.parent.im.shape[:2]
-        spacing_x, spacing_y = spacing, spacing
+        spacing_x, spacing_y = self.spacing, self.spacing
 
         self.grid = GridSegmentItem(spacing_x, spacing_y, width, height)
         self.plot.addItem(self.grid)
 
-        self.grid_flags = np.full((self.grid.num_y, self.grid.num_x), fill_value=False, dtype=bool)
-        self.selected = np.array((self.grid.num_y, self.grid.num_x, 1), dtype=list)
+        # TODO: fix edges
+        if self.grid_fills is None:
+            self.grid_fills = np.empty((self.grid.num_y, self.grid.num_x), dtype=object)
+
+        for i in range(self.grid.num_y):
+            for j in range(self.grid.num_x):
+                self.plot.removeItem(self.grid_fills[i, j])
+
+                self.grid_fills[i, j] = RectangleItem((i, j), self.spacing, (height, width),
+                                                      fillcolor='r')
+
+
+                self.plot.addItem(self.grid_fills[i, j])
+
+        self.grid_coord = (0, 0)
+        self.plot.removeItem(self.grid_fills[0, 0])
+
+        self.grid_fills[0, 0] = RectangleItem((0, 0), self.spacing, (height, width),
+                                              fillcolor='b')
+
+        self.plot.addItem(self.grid_fills[0, 0])
+
+    def update_grid_fill(self, old_coord):
+        """
+        Updates the currently selected grid
+        """
+        self.plot.removeItem(self.grid_fills[old_coord])
+        self.plot.removeItem(self.grid_fills[self.grid_coord])
+
+        if self.grid_flags[old_coord]:
+            new_color = 'g'
+        else:
+            new_color = 'r'
+
+        height, width = self.parent.im.shape[:2]
+
+        self.grid_fills[old_coord] = RectangleItem(old_coord, self.spacing, (height, width), fillcolor=new_color)
+        self.grid_fills[self.grid_coord] = RectangleItem(self.grid_coord, self.spacing, (height, width), fillcolor='b')
+
+        self.plot.addItem(self.grid_fills[old_coord])
+        self.plot.addItem(self.grid_fills[self.grid_coord])
 
     def on_mouse_click(self, pos):
         """
@@ -644,17 +686,26 @@ class OverViewer(GenericViewer):
         im_x, im_y = self.parent.im.shape[:2]
 
         if 0 <= x <= im_x and 0 <= y <= im_y:
+            old_coord = self.grid_coord
             self.grid_coord = (x // self.spacing, y // self.spacing)
             self.grid_coord = tuple(map(int, self.grid_coord))
 
+            if self.grid_coord == old_coord:
+                return
+
             self.parent.selector.set_im()
             self.grid_flags[self.grid_coord] = False
+
+            self.update_grid_fill(old_coord)
 
     def on_button_done(self):
         """
         Updates the flag status of the overview grid
         """
         self.grid_flags[self.grid_coord] = True
+
+        if self.grid_flags.all():
+            return
 
         # move to next not done grid
         # but first get current position
@@ -664,23 +715,20 @@ class OverViewer(GenericViewer):
         r = self.grid_flags.ravel(order=order)
         idx = np.where(r == False)[0]  # idxs of Trues
 
-        i = np.where(idx > start)
-        i = i[0]
-        i = i[0]
+        try:
+            i = np.where(idx > start)[0][0]
+        except IndexError:  # unless at end
+            i = 0
+
         idx = idx[i]  # first idx greater that start
 
-        # TODO: fix order
         idx = np.unravel_index(idx, (self.grid_flags.shape), order=order)
-        print()
-        print(self.grid_coord, idx)
-        print(self.grid_flags)
+
+        old_coord = self.grid_coord
         self.grid_coord = idx
         self.parent.selector.set_im()
 
-
-
-        # TEMP
-        # self.parent.selected.update_grid()
+        self.update_grid_fill(old_coord)
 
 
 class SelectorViewer(GenericViewer):
@@ -779,6 +827,59 @@ class GridSegmentItem(pg.GraphicsObject):
             p.drawLine(QtCore.QPoint(0, y), QtCore.QPoint(self.width, y))
         p.drawLine(QtCore.QPoint(0, self.height), QtCore.QPoint(self.width, self.height))
 
+        p.end()
+
+    def paint(self, p, *args):
+        p.drawPicture(0, 0, self.picture)
+
+    def boundingRect(self):
+        return QtCore.QRectF(self.picture.boundingRect())
+
+
+class RectangleItem(pg.GraphicsObject):
+    """
+    Draws a pyqtgraph filled rectangle
+    """
+    def __init__(self, top_left, size, h_w, fillcolor='r'):
+        pg.GraphicsObject.__init__(self)
+
+        self.top_left = top_left
+
+        self.spacing_x = size
+        self.spacing_y = size
+
+        self.width = h_w[0]
+        self.height = h_w[1]
+
+        assert fillcolor in ['r', 'g', 'b']
+
+        color = [0, 0, 0, 100]
+        color[['r', 'g', 'b'].index(fillcolor)] = 255
+
+        self.color = color
+
+        self.generatePicture()
+
+    def generatePicture(self):
+        self.picture = QtGui.QPicture()
+        p = QtGui.QPainter(self.picture)
+        p.setBrush(pg.mkBrush(self.color))
+        # p.setPen(pg.mkPen('w'))
+
+        # tl = QtCore.QPointF(self.top_left[0], self.top_left[1])
+        tl = QtCore.QPointF(self.top_left[0] * self.spacing_x, self.top_left[1] * self.spacing_y)
+
+        # correct for borders
+        spacing_x, spacing_y = self.spacing_x, self.spacing_y
+
+        if self.width // self.spacing_x <= self.top_left[0]:
+            spacing_x = self.width % self.spacing_x
+        if self.height // self.spacing_x <= self.top_left[1]:
+            spacing_y = self.height % self.spacing_y
+
+        size = QtCore.QSizeF(spacing_x, spacing_y)
+
+        p.drawRect(QtCore.QRectF(tl, size))
         p.end()
 
     def paint(self, p, *args):
