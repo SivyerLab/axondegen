@@ -40,7 +40,7 @@ class ImageProcess:
         self.method = None
         self.result = None
 
-    def get_thresh(self, method='thresh', thresh=125, low_thresh=0):
+    def get_thresh(self, im, method='thresh', thresh=125, low_thresh=0):
         """
         Gets the threshed image
 
@@ -51,10 +51,10 @@ class ImageProcess:
         if method not in methods:
             raise AttributeError('Incorred method selected: {}. Supported methods are: {}'.format(method, ', '.join(methods)))
 
-        to_thresh = self.gauss
+        to_thresh = im
 
         if low_thresh > 0:
-            _, to_thresh = cv2.threshold(self.gauss, 115, 255, cv2.THRESH_TOZERO)
+            _, to_thresh = cv2.threshold(im, 115, 255, cv2.THRESH_TOZERO)
             to_thresh[to_thresh == 0] = 255
 
         if method == 'thresh':
@@ -94,7 +94,13 @@ class ImageProcess:
         :param thresh: thresholding cutoff
         :return:
         """
-        threshed = self.get_thresh(method='thresh', thresh=thresh, low_thresh=115)
+        # run CLAHE
+        grid_size = np.array(self.gauss.shape[:2]) // 127
+
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=tuple(grid_size))
+        cl = clahe.apply(self.gauss)
+
+        threshed = self.get_thresh(cl, method='thresh', thresh=thresh, low_thresh=115)
 
         # do distance transform
         dist_transform = cv2.distanceTransform(threshed, cv2.DIST_L2, 5)
@@ -113,6 +119,29 @@ class ImageProcess:
         self.result = sure_fg_morph
 
         return sure_fg_morph
+
+    # def get_degen_axonj(self):
+    #     """
+    #     Attempted reimplemenation of AxonJ
+    #
+    #     https://imagej.nih.gov/ij/plugins/axonj/AxonJ_.java
+    #     :return:
+    #     """
+    #     gray = self.gray
+    #
+    #     pix_per_micron = 347  # pix/um
+    #
+    #     max_pixels = 268.0965  * pix_per_micron
+    #     min_pixels = max_pixels / 100
+    #
+    #     hess_scales = 0.08579 * pix_per_micron
+    #
+    #     # run CLAHE
+    #     grid_size = gray.shape[:2] // 127
+    #     clahe = cv2.createCLAHE(clipLimit=3, tileGridSize=grid_size)
+    #
+    #     contrast_adjusted =
+
 
     def get_centroids(self, mask, min_dist=30):
         """

@@ -342,6 +342,10 @@ class CentralWidget(QtWidgets.QWidget):
         # right side cell selector
         self.selector = SelectorViewer(self)
 
+        # self.selector.sigMouseDragged.connect(self.selector.on_mouse_drag)
+        # self.selector.sigMouseDragged.scene().connect(self.selector.on_mouse_drag)
+        # self.selector.mouseDragEvent.connect(self.selector.on_mouse_drag)
+
         layout_selector_splitter.addLayout(layout_left_panel, 1)
         layout_selector_splitter.addWidget(self.selector, 4)
 
@@ -596,6 +600,9 @@ class GenericViewer(ImageWidget):
 
 class OverViewer(GenericViewer):
 
+    # signals
+    sigUpdateRects = QtCore.Signal(object)
+
     def __init__(self, parent=None):
         super().__init__(parent=parent)
 
@@ -603,7 +610,7 @@ class OverViewer(GenericViewer):
         self.spacing = 550
 
         self.grid = None
-        self.grid_rects = None
+        self.grid_rects = []
         self.grid_fills = None
 
     def set_im(self, im=None, clear=True):
@@ -738,6 +745,9 @@ class SelectorViewer(GenericViewer):
 
         self.sub_im = None
 
+        self.viewer.getViewBox().mouseClickEvent = self.on_mouse_click
+        self.viewer.getViewBox().mouseDragEvent = self.on_mouse_drag
+
     def set_im(self, im=None, clear=True):
         """
         Sets image based on overviewer
@@ -755,6 +765,69 @@ class SelectorViewer(GenericViewer):
 
         self.sub_im = self.parent.im[y1:y2, x1:x2]
         self.viewer.setImage(self.sub_im)
+
+    def on_mouse_click(self, ev):
+        """
+        Hijacks middle button click to autoRange
+        """
+        if ev.button() & QtCore.Qt.MidButton:
+            ev.accept()
+            self.viewer.getViewBox().autoRange()
+
+    def on_mouse_drag(self, ev, axis=None):
+        """
+        Hijacks viewbox mouse drag event to make on own drag box
+        """
+        ev.accept()
+        pos = ev.pos()
+        lastPos = ev.lastPos()
+        dif = pos - lastPos
+        dif = dif * -1
+
+        # just reuse viewbox items instead of recreating our own
+        vb = self.viewer.getViewBox()
+
+        # scale or translate based on mouse button
+        if ev.button() & QtCore.Qt.LeftButton:
+
+            if ev.isFinish():  ## this is the final move in the drag; change the view scale now
+                vb.rbScaleBox.hide()
+                ax = QtCore.QRectF(pg.Point(ev.buttonDownPos(ev.button())), pg.Point(pos))
+                ax = vb.childGroup.mapRectFromParent(ax)
+                print()
+                print(ax)
+                # print(vb.rbScaleBox.pos())
+
+                grid_rect = QtGui.QGraphicsRectItem(ax)
+                grid_rect.setPen(pg.mkPen((255,0,100), width=1))
+                grid_rect.setBrush(pg.mkBrush(255,0,0,50))
+                grid_rect.setZValue(1e9)
+                grid_rect.show()
+                vb.addItem(grid_rect, ignoreBounds=True)
+
+                print(grid_rect.pos())
+                # self.parent.overview.grid_rects.append
+
+            else:
+                # update shape of scale box
+                vb.updateScaleBox(ev.buttonDownPos(), ev.pos())
+
+        elif ev.button() & QtCore.Qt.RightButton:
+            tr = dif
+            tr = vb.mapToView(tr) - vb.mapToView(pg.Point(0, 0))
+            x = tr.x()
+            y = tr.y()
+
+            vb._resetTarget()
+            if x is not None or y is not None:
+                vb.translateBy(x=x, y=y)
+                vb.sigRangeChangedManually.emit(vb.state['mouseEnabled'])
+
+
+# class SelectedCell(QtGui.QGraphicsRectItem):
+#     """
+#     Adds a few parameters to the
+#     """
 
 
 # TODO: make this work
