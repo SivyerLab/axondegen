@@ -321,6 +321,9 @@ class CentralWidget(QtWidgets.QWidget):
 
         layout_left_panel.addLayout(layout_left_controls)
 
+        # right side cell selector
+        self.selector = SelectorViewer(self)
+
         # grid of selected cells
         scroll_area = QtWidgets.QScrollArea()
         scroll_area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
@@ -339,9 +342,6 @@ class CentralWidget(QtWidgets.QWidget):
         layout_grid.setAlignment(QtCore.Qt.AlignLeft)
 
         layout_left_panel.addWidget(scroll_area)
-
-        # right side cell selector
-        self.selector = SelectorViewer(self)
 
         # self.selector.sigMouseDragged.connect(self.selector.on_mouse_drag)
         # self.selector.sigMouseDragged.scene().connect(self.selector.on_mouse_drag)
@@ -741,6 +741,8 @@ class OverViewer(GenericViewer):
 
 class SelectorViewer(GenericViewer):
 
+    rects_changed = QtCore.pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent=parent)
 
@@ -752,6 +754,8 @@ class SelectorViewer(GenericViewer):
         self.viewer.getViewBox().mouseClickEvent = self.on_mouse_click
         self.viewer.getViewBox().mouseDragEvent = self.on_mouse_drag
         self.viewer.getViewBox().keyPressEvent = self.on_key_press
+
+        self.rects_changed.connect(self.update_rects)
 
     def set_im(self, im=None, clear=True):
         """
@@ -772,7 +776,7 @@ class SelectorViewer(GenericViewer):
         self.viewer.setImage(self.sub_im)
 
         self.clear_rects()
-        self.draw_rects()
+        self.draw_existing_rects()
 
     def clear_rects(self):
         """
@@ -784,40 +788,128 @@ class SelectorViewer(GenericViewer):
 
         self.rects = []
         self.selected_rect = None
-        # self.parent.selected.update_grid()
 
-        self.parent.degen_count.setText('Count: 0 ')
+        self.rects_changed.emit()
 
-    def update_rects(self, rect):
+    def update_rects(self):
         """
-        Updates list of rects
+        Updates rect count
         """
-        self.rects.append(rect)
-
         self.parent.degen_count.setText('Count: {} '.format(len(self.rects)))
-        self.parent.selected.update_grid()
 
-    def draw_rects(self):
+        total_count = 0
+        for a in self.parent.overview.grid_rects.flatten():
+            if a is not None:
+                total_count += len(a)
+
+        self.parent.status_count.setText('Count: {} '.format(total_count))
+
+    def draw_existing_rects(self):
         """
         Draws the rects for that grid coord
         """
         ov = self.parent.overview
         grid_rects = ov.grid_rects[ov.grid_coord]
 
-        vb = self.viewer.getViewBox()
-
         if grid_rects is not None:
             for rect in grid_rects:
-                grid_rect = QtGui.QGraphicsRectItem(*rect)
-                grid_rect.setPen(pg.mkPen((255, 0, 100), width=1))
-                grid_rect.setBrush(pg.mkBrush(255, 0, 0, 50))
-                grid_rect.setZValue(1e9)
-                grid_rect.show()
-                vb.addItem(grid_rect, ignoreBounds=True)
 
+                grid_rect = self.draw_rect(rect)
                 self.rects.append(grid_rect)
 
-        self.parent.selected.update_grid()
+        self.rects_changed.emit()
+
+    def draw_new_rect(self, rect):
+        """
+        Handles drawing of new rects
+        """
+        if isinstance(rect, QtCore.QRectF):
+            rect = list(rect.getRect())
+
+        grid_rect = self.draw_rect(rect)
+
+        self.rects.append(grid_rect)
+
+        ov = self.parent.overview
+        grid_rects = ov.grid_rects
+
+        if grid_rects[ov.grid_coord] is None:
+            grid_rects[ov.grid_coord] = [rect]
+        else:
+            grid_rects[ov.grid_coord].append(rect)
+
+        self.rects_changed.emit()
+
+    def draw_rect(self, rect):
+        """
+        Draws the permanent rect that stays after the end of the drag event
+        """
+        # just reuse viewbox items instead of recreating our own
+        vb = self.viewer.getViewBox()
+        ov = self.parent.overview
+
+        if isinstance(rect, QtCore.QRectF):
+            fixed_size = list(rect.getRect())
+        else:
+            fixed_size = rect
+
+        # stop the selection going out of bounds on top and left
+        if fixed_size[0] < 0:
+            fixed_size[2] += fixed_size[0]
+        if fixed_size[1] < 0:
+            fixed_size[3] += fixed_size[1]
+        fixed_size = np.clip(fixed_size, 0, None)
+
+        spacing = [self.parent.overview.spacing] * 2
+
+        # stop the selection going out of bounds on bottom and right
+        # determine if on edge piece (right and bottom)
+        edge = np.array((ov.grid.num_y, ov.grid.num_x)) - 1 - np.array(ov.grid_coord)
+        if not np.all(edge):
+            for idx, e in enumerate(edge):
+                if e == 0:
+                    # calc size of edge piece, make sure not zero
+                    new_spacing = self.parent.im.shape[idx] % spacing[idx]
+                    if new_spacing != 0:
+                        spacing[idx] = new_spacing
+
+        # don't let box go out of bounds
+        for i in range(2):
+            if fixed_size[0+i] + fixed_size[2+i] > spacing[i]:
+                fixed_size[2+i] = spacing[i] - fixed_size[0+i]
+
+        grid_rect = QtGui.QGraphicsRectItem(*fixed_size)
+        grid_rect.setPen(pg.mkPen((255,0,100), width=1))
+        grid_rect.setBrush(pg.mkBrush(255,0,0,50))
+        grid_rect.setZValue(1e9)
+        grid_rect.show()
+        vb.addItem(grid_rect, ignoreBounds=True)
+
+        if self.selected_rect is not None:
+            self.color_rects(self.selected_rect, 'red')
+            self.selected_rect = None
+
+        return grid_rect
+
+    def color_rects(self, rects, color):
+        """
+        Recolors rects
+        """
+        assert color in ['red', 'blue']
+        if color == 'red':
+            pen = pg.mkPen((255, 0, 100), width=1)
+            brush = pg.mkBrush(255, 0, 0, 50)
+        elif color == 'blue':
+            pen = pg.mkPen((100, 0, 255), width=1)
+            brush = pg.mkBrush(0, 0, 255, 50)
+
+        if isinstance(rects, QtWidgets.QGraphicsRectItem):
+            rects = [rects]
+
+        for rect in rects:
+            rect.setPen(pen)
+            rect.setBrush(brush)
+            rect.update()
 
     def on_mouse_click(self, ev):
         """
@@ -862,81 +954,9 @@ class SelectorViewer(GenericViewer):
 
                 ov = self.parent.overview
                 del(ov.grid_rects[ov.grid_coord][idx])
+                self.rects_changed.emit()
 
                 self.selected_rect = None
-
-                self.parent.degen_count.setText('Count: {} '.format(len(self.rects)))
-                self.parent.selected.update_grid()
-
-    def color_rects(self, rects, color):
-        """
-        Recolors rects
-        """
-        assert color in ['red', 'blue']
-        if color == 'red':
-            pen = pg.mkPen((255, 0, 100), width=1)
-            brush = pg.mkBrush(255, 0, 0, 50)
-        elif color == 'blue':
-            pen = pg.mkPen((100, 0, 255), width=1)
-            brush = pg.mkBrush(0, 0, 255, 50)
-
-        if isinstance(rects, QtWidgets.QGraphicsRectItem):
-            rects = [rects]
-
-        for rect in rects:
-            rect.setPen(pen)
-            rect.setBrush(brush)
-            rect.update()
-
-    def draw_new_rect(self, ax):
-        """
-
-        :param ax:
-        :return:
-        """
-        # just reuse viewbox items instead of recreating our own
-        vb = self.viewer.getViewBox()
-
-        fixed_size = np.clip(ax.getRect(), 0, None)
-        spacing = [self.parent.overview.spacing] * 2
-
-        ov = self.parent.overview
-        grid_rects = ov.grid_rects
-
-        # determine if on edge piece (right and bottom)
-        edge = np.array((ov.grid.num_y, ov.grid.num_x)) - 1 - np.array(ov.grid_coord)
-        if not np.all(edge):
-            for idx, e in enumerate(edge):
-                if e == 0:
-                    # calc size of edge piece, make sure not zero
-                    new_spacing = self.parent.im.shape[idx] % spacing[idx]
-                    if new_spacing != 0:
-                        spacing[idx] = new_spacing
-
-        # don't let box go out of bounds
-        for i in range(2):
-            if fixed_size[0+i] + fixed_size[2+i] > spacing[i]:
-                fixed_size[2+i] = spacing[i] - fixed_size[0+i]
-
-        ax.setRect(*fixed_size)
-
-        grid_rect = QtGui.QGraphicsRectItem(ax)
-        grid_rect.setPen(pg.mkPen((255,0,100), width=1))
-        grid_rect.setBrush(pg.mkBrush(255,0,0,50))
-        grid_rect.setZValue(1e9)
-        grid_rect.show()
-        vb.addItem(grid_rect, ignoreBounds=True)
-
-        if grid_rects[ov.grid_coord] is None:
-            grid_rects[ov.grid_coord] = [grid_rect.rect().getRect()]
-        else:
-            grid_rects[ov.grid_coord].append(grid_rect.rect().getRect())
-
-        self.update_rects(grid_rect)
-
-        if self.selected_rect is not None:
-            self.color_rects(self.selected_rect, 'red')
-            self.selected_rect = None
 
     def on_mouse_drag(self, ev, axis=None):
         """
@@ -984,6 +1004,7 @@ class SelectedViewer:
     def __init__(self, parent):
 
         self.parent = parent
+        self.parent.selector.rects_changed.connect(self.update_grid)
 
     def get_layout(self):
         """
