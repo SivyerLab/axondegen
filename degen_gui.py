@@ -12,6 +12,7 @@ import numpy as np
 import scipy as sp
 import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
+from flowlayout import FlowLayout
 
 from image_process import ImageProcess
 
@@ -59,7 +60,7 @@ class Frame(QtWidgets.QMainWindow):
         """
         super(Frame, self).__init__(parent)
 
-        # self.setGeometry(100, 100, 600, 500)
+        self.setGeometry(250, 100, 1000, 750)
         self.setWindowTitle('Axon Degeneration')
 
         self.menubar = self.create_menu_bar()
@@ -607,10 +608,11 @@ class OverViewer(GenericViewer):
         super().__init__(parent=parent)
 
         self.grid_coord = (0, 0)
-        self.spacing = 550
+        # self.spacing = 550
+        self.spacing = 784
 
         self.grid = None
-        self.grid_rects = []
+        self.grid_rects = None
         self.grid_fills = None
 
     def set_im(self, im=None, clear=True):
@@ -623,6 +625,7 @@ class OverViewer(GenericViewer):
         self.draw_grid()
 
         self.grid_flags = np.full((self.grid.num_y, self.grid.num_x), fill_value=False, dtype=bool)
+        self.grid_rects = np.empty((self.grid.num_y, self.grid.num_x), dtype=np.ndarray)
         # self.selected = np.array((self.grid.num_y, self.grid.num_x, 1), dtype=list)
 
     def draw_grid(self):
@@ -638,7 +641,6 @@ class OverViewer(GenericViewer):
         self.grid = GridSegmentItem(spacing_x, spacing_y, width, height)
         self.plot.addItem(self.grid)
 
-        # TODO: fix edges
         if self.grid_fills is None:
             self.grid_fills = np.empty((self.grid.num_y, self.grid.num_x), dtype=object)
 
@@ -648,7 +650,6 @@ class OverViewer(GenericViewer):
 
                 self.grid_fills[i, j] = RectangleItem((i, j), self.spacing, (height, width),
                                                       fillcolor='r')
-
 
                 self.plot.addItem(self.grid_fills[i, j])
 
@@ -745,8 +746,12 @@ class SelectorViewer(GenericViewer):
 
         self.sub_im = None
 
+        self.rects = []
+        self.selected_rect = None
+
         self.viewer.getViewBox().mouseClickEvent = self.on_mouse_click
         self.viewer.getViewBox().mouseDragEvent = self.on_mouse_drag
+        self.viewer.getViewBox().keyPressEvent = self.on_key_press
 
     def set_im(self, im=None, clear=True):
         """
@@ -766,13 +771,172 @@ class SelectorViewer(GenericViewer):
         self.sub_im = self.parent.im[y1:y2, x1:x2]
         self.viewer.setImage(self.sub_im)
 
+        self.clear_rects()
+        self.draw_rects()
+
+    def clear_rects(self):
+        """
+        Clears out the currently drawn selections
+        """
+        vb = self.viewer.getViewBox()
+        for rect in self.rects:
+            vb.removeItem(rect)
+
+        self.rects = []
+        self.selected_rect = None
+        # self.parent.selected.update_grid()
+
+        self.parent.degen_count.setText('Count: 0 ')
+
+    def update_rects(self, rect):
+        """
+        Updates list of rects
+        """
+        self.rects.append(rect)
+
+        self.parent.degen_count.setText('Count: {} '.format(len(self.rects)))
+        self.parent.selected.update_grid()
+
+    def draw_rects(self):
+        """
+        Draws the rects for that grid coord
+        """
+        ov = self.parent.overview
+        grid_rects = ov.grid_rects[ov.grid_coord]
+
+        vb = self.viewer.getViewBox()
+
+        if grid_rects is not None:
+            for rect in grid_rects:
+                grid_rect = QtGui.QGraphicsRectItem(*rect)
+                grid_rect.setPen(pg.mkPen((255, 0, 100), width=1))
+                grid_rect.setBrush(pg.mkBrush(255, 0, 0, 50))
+                grid_rect.setZValue(1e9)
+                grid_rect.show()
+                vb.addItem(grid_rect, ignoreBounds=True)
+
+                self.rects.append(grid_rect)
+
+        self.parent.selected.update_grid()
+
     def on_mouse_click(self, ev):
         """
-        Hijacks middle button click to autoRange
+        Hijacks middle button click to autoRange, and left button to select rect
         """
         if ev.button() & QtCore.Qt.MidButton:
             ev.accept()
             self.viewer.getViewBox().autoRange()
+
+        elif ev.button() & QtCore.Qt.LeftButton:
+            ev.accept()
+            clicked = self.viewer.scene().items(ev.scenePos())
+            rects = [i for i in clicked if isinstance(i, QtWidgets.QGraphicsRectItem)]
+
+            if rects:
+                areas = [rect.rect().getRect() for rect in rects]
+                areas = [area[2]*area[3] for area in areas]
+                idx_min = areas.index(min(areas))
+
+                # uncolor if one is already selected
+                if self.selected_rect is not None:
+                    self.color_rects(self.selected_rect, 'red')
+
+                rect = rects[idx_min]
+                self.selected_rect = rect
+                self.color_rects(self.selected_rect, 'blue')
+
+            else:
+                self.color_rects(self.rects, 'red')
+                self.selected_rect = None
+
+    def on_key_press(self, ev):
+        """
+        Hijacks key press event
+        """
+        if ev.key() == QtCore.Qt.Key_Delete:
+            if self.selected_rect is not None:
+                idx = self.rects.index(self.selected_rect)
+
+                self.viewer.getViewBox().removeItem(self.selected_rect)
+                del(self.rects[idx])
+
+                ov = self.parent.overview
+                del(ov.grid_rects[ov.grid_coord][idx])
+
+                self.selected_rect = None
+
+                self.parent.degen_count.setText('Count: {} '.format(len(self.rects)))
+                self.parent.selected.update_grid()
+
+    def color_rects(self, rects, color):
+        """
+        Recolors rects
+        """
+        assert color in ['red', 'blue']
+        if color == 'red':
+            pen = pg.mkPen((255, 0, 100), width=1)
+            brush = pg.mkBrush(255, 0, 0, 50)
+        elif color == 'blue':
+            pen = pg.mkPen((100, 0, 255), width=1)
+            brush = pg.mkBrush(0, 0, 255, 50)
+
+        if isinstance(rects, QtWidgets.QGraphicsRectItem):
+            rects = [rects]
+
+        for rect in rects:
+            rect.setPen(pen)
+            rect.setBrush(brush)
+            rect.update()
+
+    def draw_new_rect(self, ax):
+        """
+
+        :param ax:
+        :return:
+        """
+        # just reuse viewbox items instead of recreating our own
+        vb = self.viewer.getViewBox()
+
+        fixed_size = np.clip(ax.getRect(), 0, None)
+        spacing = [self.parent.overview.spacing] * 2
+
+        ov = self.parent.overview
+        grid_rects = ov.grid_rects
+
+        # determine if on edge piece (right and bottom)
+        edge = np.array((ov.grid.num_y, ov.grid.num_x)) - 1 - np.array(ov.grid_coord)
+        if not np.all(edge):
+            for idx, e in enumerate(edge):
+                if e == 0:
+                    # calc size of edge piece, make sure not zero
+                    new_spacing = self.parent.im.shape[idx] % spacing[idx]
+                    if new_spacing != 0:
+                        spacing[idx] = new_spacing
+
+        # don't let box go out of bounds
+        for i in range(2):
+            if fixed_size[0+i] + fixed_size[2+i] > spacing[i]:
+                fixed_size[2+i] = spacing[i] - fixed_size[0+i]
+
+        ax.setRect(*fixed_size)
+
+        grid_rect = QtGui.QGraphicsRectItem(ax)
+        grid_rect.setPen(pg.mkPen((255,0,100), width=1))
+        grid_rect.setBrush(pg.mkBrush(255,0,0,50))
+        grid_rect.setZValue(1e9)
+        grid_rect.show()
+        vb.addItem(grid_rect, ignoreBounds=True)
+
+        if grid_rects[ov.grid_coord] is None:
+            grid_rects[ov.grid_coord] = [grid_rect.rect().getRect()]
+        else:
+            grid_rects[ov.grid_coord].append(grid_rect.rect().getRect())
+
+        self.update_rects(grid_rect)
+
+        if self.selected_rect is not None:
+            self.color_rects(self.selected_rect, 'red')
+            self.selected_rect = None
 
     def on_mouse_drag(self, ev, axis=None):
         """
@@ -790,23 +954,12 @@ class SelectorViewer(GenericViewer):
         # scale or translate based on mouse button
         if ev.button() & QtCore.Qt.LeftButton:
 
-            if ev.isFinish():  ## this is the final move in the drag; change the view scale now
+            if ev.isFinish():  # this is the final move in the drag; change the view scale now
                 vb.rbScaleBox.hide()
                 ax = QtCore.QRectF(pg.Point(ev.buttonDownPos(ev.button())), pg.Point(pos))
                 ax = vb.childGroup.mapRectFromParent(ax)
-                print()
-                print(ax)
-                # print(vb.rbScaleBox.pos())
 
-                grid_rect = QtGui.QGraphicsRectItem(ax)
-                grid_rect.setPen(pg.mkPen((255,0,100), width=1))
-                grid_rect.setBrush(pg.mkBrush(255,0,0,50))
-                grid_rect.setZValue(1e9)
-                grid_rect.show()
-                vb.addItem(grid_rect, ignoreBounds=True)
-
-                print(grid_rect.pos())
-                # self.parent.overview.grid_rects.append
+                self.draw_new_rect(ax)
 
             else:
                 # update shape of scale box
@@ -824,13 +977,6 @@ class SelectorViewer(GenericViewer):
                 vb.sigRangeChangedManually.emit(vb.state['mouseEnabled'])
 
 
-# class SelectedCell(QtGui.QGraphicsRectItem):
-#     """
-#     Adds a few parameters to the
-#     """
-
-
-# TODO: make this work
 class SelectedViewer:
     """
     Grid viewer for selected axons
@@ -845,27 +991,58 @@ class SelectedViewer:
         """
         self.layout_grid = QtWidgets.QGridLayout()
 
+        # TODO: figure out flow layout
+        # self.layout_grid = FlowLayout()
+        self.layout_grid.setSizeConstraint(3)
+
         return self.layout_grid
 
     def update_grid(self):
         """
         Draws the pixmaps
         """
-        # several test pixmaps
-        test_im = self.parent.selector.sub_im[0:100, 0:100, :].copy()  # cannot be view, must be array
-        height, width, channel = test_im.shape
+        # first clear out existing pixmaps
+        while self.layout_grid.count():
+            item = self.layout_grid.takeAt(0)
+            widget = item.widget()
+            widget.deleteLater()
 
-        bpl = 3 * width  # bytes per line
-        qimg = QtGui.QImage(test_im.data, width, height, bpl, QtGui.QImage.Format_RGB888)
-        qpix = QtGui.QPixmap.fromImage(qimg)
+        # get bounding rects
+        sub_im = self.parent.selector.sub_im
+        rects = self.parent.selector.rects
 
-        pixmaps = [QtWidgets.QLabel() for i in range(30)]
+        # get coords from objects
+        rects = [rect.rect().getRect() for rect in rects]
+        rects = [list(map(int, rect)) for rect in rects]
 
-        # TODO: update layout on resize event
-        for idx, p in enumerate(pixmaps):
-            p.setPixmap(qpix)
-            p.setFixedSize(100, 100)
-            self.layout_grid.addWidget(p, idx // 2, idx % 2)  # two per row
+        # second half is distance
+        coord = lambda c: [c[0], c[1], c[0]+c[2], c[1]+c[3]]
+        rects = [coord(rect) for rect in rects]
+
+        ims = [sub_im[rect[1]:rect[3], rect[0]:rect[2]].copy() for rect in rects]
+
+        cols = 2
+        rows = (len(ims)+1) // cols
+
+        for idx, im in enumerate(ims):
+            height, width, channel = im.shape
+            bpl = 3 * width
+
+            qimg = QtGui.QImage(im.data, width, height, bpl, QtGui.QImage.Format_RGB888)
+            qpix = QtGui.QPixmap.fromImage(qimg)
+
+            if height > 100 or width > 100:
+                qpix = qpix.scaled(64, 64, QtCore.Qt.KeepAspectRatio)
+
+            pixmap = QtWidgets.QLabel()
+
+            pixmap.setPixmap(qpix)
+
+            row = idx // cols
+            col = idx % cols
+
+            self.layout_grid.addWidget(pixmap, row, col)  # two per row
+            # self.layout_grid.addWidget(pixmap)
 
 
 class GridSegmentItem(pg.GraphicsObject):
@@ -880,8 +1057,13 @@ class GridSegmentItem(pg.GraphicsObject):
         self.width = width
         self.height = height
 
-        self.num_x = self.width // self.spacing_x + 1
-        self.num_y = self.height // self.spacing_y + 1
+        self.num_x = self.width // self.spacing_x
+        self.num_y = self.height // self.spacing_y
+
+        if self.width % self.spacing_x != 0:
+            self.num_x += 1
+        if self.height % self.spacing_y != 0:
+            self.num_y += 1
 
         self.generatePicture()
 
