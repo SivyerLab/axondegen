@@ -120,27 +120,38 @@ class ImageProcess:
 
         return sure_fg_morph
 
-    # def get_degen_axonj(self):
+    # def get_degen_axonj(self, im):
     #     """
     #     Attempted reimplemenation of AxonJ
     #
     #     https://imagej.nih.gov/ij/plugins/axonj/AxonJ_.java
     #     :return:
     #     """
-    #     gray = self.gray
+    #     grayed = self.preprocess_im(im)
     #
-    #     pix_per_micron = 347  # pix/um
+    #     pix_per_micron = 53414  # pix/um
     #
-    #     max_pixels = 268.0965  * pix_per_micron
+    #     max_pixels = 268.0965 * pix_per_micron
     #     min_pixels = max_pixels / 100
     #
     #     hess_scales = 0.08579 * pix_per_micron
     #
-    #     # run CLAHE
-    #     grid_size = gray.shape[:2] // 127
-    #     clahe = cv2.createCLAHE(clipLimit=3, tileGridSize=grid_size)
+    #     # run CLAHE (contrast limited adaptive histogram equalization)
+    #     grid_size = np.array(grayed.shape[:2]) // 127
     #
-    #     contrast_adjusted =
+    #     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=tuple(grid_size))
+    #     cl = clahe.apply(grayed)
+    #
+    #     # get ridge filter (max eigenvalue of the Hessian)
+    #     ridge_filter = cv2.ximgproc.RidgeDetectionFilter_create(scale=0.08579)
+    #     ridged = ridge_filter.getRidgeFilteredImage(cl)
+    #     m = ridged.mean() * 0.75
+    #
+    #     threshed = self.get_thresh(ridged, method='thresh', thresh=m, inv=True, denoise=False)
+    #
+    #     labels, *stats = cv2.connectedComponentsWithStats(threshed)[1:]
+    #
+    #     return ridged, threshed, labels, stats
 
 
     def get_centroids(self, mask, min_dist=30):
