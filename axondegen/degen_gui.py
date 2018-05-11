@@ -9,12 +9,11 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import scipy as sp
 import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
 # from flowlayout import FlowLayout
 
-from image_process import ImageProcess
+from axondegen.image_process import ImageProcess
 
 __author__ = 'Alexander Tomlinson'
 __email__ = 'tomlinsa@ohsu.edu'
