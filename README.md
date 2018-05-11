@@ -21,4 +21,4 @@ Licensed under GNU GPL v3.0.
 
 ![screenshot]
 
-  [screenshot](docs/sample_data/slide01_section1_area08.tif)
+  [screenshot]: https://raw.githubusercontent.com/SivyerLab/axondegen/master/docs/degen_select.PNG
