@@ -13,7 +13,7 @@ import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
 # from flowlayout import FlowLayout
 
-from axondegen.image_process import ImageProcess
+from imageprocess import ImageProcess
 
 __author__ = 'Alexander Tomlinson'
 __email__ = 'tomlinsa@ohsu.edu'
@@ -578,7 +578,7 @@ class GenericViewer(ImageWidget):
         :return:
         """
         if im is None:
-            im_path = r'C:\Users\Alex\Downloads\morrison_slides\tifs\slide01\raw\slide01_section1_area08.tif'
+            im_path = r'docs\sample_data\slide01_section1_area08.tif'
             im_path = Path(im_path)
             assert im_path.exists()
             im = cv2.imread(str(im_path))
