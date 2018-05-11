@@ -12,7 +12,7 @@ import numpy as np
 import scipy as sp
 import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
-from flowlayout import FlowLayout
+# from flowlayout import FlowLayout
 
 from image_process import ImageProcess
 
@@ -310,12 +310,25 @@ class CentralWidget(QtWidgets.QWidget):
         # left panel mid controls
         layout_left_controls = QtWidgets.QVBoxLayout()
 
+        # layout for buttons
+        layout_buttons = QtWidgets.QHBoxLayout()
+
         self.button_done = QtWidgets.QPushButton('Done')
         self.button_done.clicked.connect(self.overview.on_button_done)
 
+        self.button_save = QtWidgets.QPushButton('Save')
+        self.button_save.clicked.connect(self.overview.on_button_save)
+
+        self.button_load = QtWidgets.QPushButton('Load')
+        self.button_load.clicked.connect(self.overview.on_button_load)
+
         self.degen_count = QtWidgets.QLabel('Count: {} '.format(0))
 
-        layout_left_controls.addWidget(self.button_done)
+        layout_buttons.addWidget(self.button_done)
+        layout_buttons.addWidget(self.button_save)
+        layout_buttons.addWidget(self.button_load)
+
+        layout_left_controls.addLayout(layout_buttons)
         layout_left_controls.addWidget(self.degen_count)
         layout_left_controls.setAlignment(QtCore.Qt.AlignLeft)
 
@@ -737,6 +750,18 @@ class OverViewer(GenericViewer):
         self.parent.selector.set_im()
 
         self.update_grid_fill(old_coord)
+
+    def on_button_save(self):
+        """
+        Saves a text file with grid coord info for each selected degen axon
+        """
+        raise NotImplementedError('saving not yet set up')
+
+    def on_button_load(self):
+        """
+        Saves a text file with grid coord info for each selected degen axon
+        """
+        raise NotImplementedError('loading not yet set up')
 
 
 class SelectorViewer(GenericViewer):
