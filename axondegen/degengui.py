@@ -633,6 +633,8 @@ class OverViewer(GenericViewer):
         self.grid_rects = None
         self.grid_fills = None
 
+        self.viewer.getViewBox().keyPressEvent = self.on_key_press
+
     def set_im(self, im=None, clear=True):
         """
         Updates the viewer to an image
@@ -678,6 +680,13 @@ class OverViewer(GenericViewer):
                                               fillcolor='b')
 
         self.plot.addItem(self.grid_fills[0, 0])
+
+    def on_key_press(self, ev):
+        """
+        Hijacks key press event
+        """
+        if ev.key() == QtCore.Qt.Key_Space:
+            self.on_button_done()
 
     def update_grid_fill(self, old_coord):
         """
@@ -731,6 +740,7 @@ class OverViewer(GenericViewer):
         self.grid_flags[self.grid_coord] = True
 
         if self.grid_flags.all():
+            self.on_button_save()
             return
 
         # move to next not done grid
@@ -760,8 +770,6 @@ class OverViewer(GenericViewer):
         """
         Saves a text file with grid coord info for each selected degen axon
         """
-        # raise NotImplementedError('saving not yet set up')
-
         if self.grid_rects.any():
             save_name = self.parent.im_path.stem
 
@@ -794,14 +802,47 @@ class OverViewer(GenericViewer):
                 out = list(chain.from_iterable(out))
 
                 json.dump(out, f, indent=2)
-                # print(json.dumps(out))
 
 
     def on_button_load(self):
         """
         Saves a text file with grid coord info for each selected degen axon
         """
-        raise NotImplementedError('loading not yet set up')
+        # raise NotImplementedError('loading not yet set up')
+
+        load_path = QtWidgets.QFileDialog.getOpenFileName(self, 'Open image',
+                                                                filter='JSON (*.json);;'\
+                                                                'All files (*)')[0]
+        if not load_path:
+            return
+
+        load_path = Path(load_path)
+        assert load_path.exists()
+
+        with open(load_path, 'r') as f:
+            raw_data = json.load(f)
+
+        def get_mods(t, spacing):
+            x, y, dx, dy = t
+            return (x % spacing, y % spacing, dx, dy)
+
+        def get_idxs(t, spacing):
+            x, y, dx, dy = t
+            return (x // spacing, y // spacing)
+
+        data = [get_mods(i, self.spacing) for i in raw_data]
+        idxs = [get_idxs(i, self.spacing) for i in raw_data]
+
+        self.parent.selector.clear_rects()
+
+        self.grid_flags = np.full((self.grid.num_y, self.grid.num_x), fill_value=False, dtype=bool)
+        self.draw_grid()
+        self.grid_rects = np.empty((self.grid.num_y, self.grid.num_x), dtype=np.ndarray)
+
+        for idx, rect in zip(idxs, data):
+            self.parent.selector.add_rect_to_rects(rect, idx)
+
+        self.parent.selector.draw_existing_rects()
 
 
 class SelectorViewer(GenericViewer):
@@ -884,12 +925,37 @@ class SelectorViewer(GenericViewer):
 
         self.rects_changed.emit()
 
+    def add_rect_to_rects(self, rect, idx=None):
+        """
+        Adds a rect to rect container
+        :param rect:
+        :return:
+        """
+        ov = self.parent.overview
+        grid_rects = ov.grid_rects
+
+        if idx is None:
+            idx = ov.grid_coord
+
+        if grid_rects[idx] is None:
+            grid_rects[idx] = [rect]
+        else:
+            grid_rects[idx].append(rect)
+
     def draw_new_rect(self, rect):
         """
         Handles drawing of new rects
         """
         if isinstance(rect, QtCore.QRectF):
             rect = list(rect.getRect())
+
+        # don't draw rects that are completely out of bounds
+        if not rect[0] + rect[2] > 0 or not rect[1] + rect[3] > 0:
+            return
+
+        shape = self.sub_im.shape
+        if rect[0] > shape[1] or rect[1] > shape[0]:
+            return
 
         grid_rect = self.draw_rect(rect)
 
@@ -898,10 +964,7 @@ class SelectorViewer(GenericViewer):
         ov = self.parent.overview
         grid_rects = ov.grid_rects
 
-        if grid_rects[ov.grid_coord] is None:
-            grid_rects[ov.grid_coord] = [rect]
-        else:
-            grid_rects[ov.grid_coord].append(rect)
+        self.add_rect_to_rects(grid_rect.rect().getRect())
 
         self.rects_changed.emit()
 
@@ -1010,7 +1073,7 @@ class SelectorViewer(GenericViewer):
         """
         Hijacks key press event
         """
-        if ev.key() == QtCore.Qt.Key_Delete:
+        if ev.key() == QtCore.Qt.Key_Delete or ev.key() == QtCore.Qt.Key_D:
             if self.selected_rect is not None:
                 idx = self.rects.index(self.selected_rect)
 
@@ -1025,6 +1088,9 @@ class SelectorViewer(GenericViewer):
                 self.rects_changed.emit()
 
                 self.selected_rect = None
+
+        if ev.key() == QtCore.Qt.Key_Space:
+            self.parent.overview.on_button_done()
 
     def on_mouse_drag(self, ev, axis=None):
         """
@@ -1133,7 +1199,7 @@ class SelectedViewer:
             self.layout_grid.addWidget(pixmap, row, col)  # two per row
             # self.layout_grid.addWidget(pixmap)
 
-        print(self.parent.overview.grid_rects, end='\n\n')
+        # print(self.parent.overview.grid_rects, end='\n\n')
 
 class GridSegmentItem(pg.GraphicsObject):
     """
