@@ -4,8 +4,10 @@ Test of gui
 
 import logging
 import sys
+import json
 import traceback as tb
 from pathlib import Path
+from itertools import chain
 
 import cv2
 import numpy as np
@@ -122,6 +124,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.frame = parent
 
         self.im = None
+        self.im_path = None
         self.im_process = None
         self.centers = None
 
@@ -378,6 +381,8 @@ class CentralWidget(QtWidgets.QWidget):
         im_path = Path(im_path)
         assert im_path.exists()
 
+        self.im_path = im_path
+
         self.im = cv2.imread(str(im_path))
 
         self.image_viewer.set_im(self.im)
@@ -578,9 +583,10 @@ class GenericViewer(ImageWidget):
         :return:
         """
         if im is None:
-            im_path = r'docs\sample_data\slide01_section1_area08.tif'
+            im_path = r'..\docs\sample_data\slide01_section1_area08.tif'
             im_path = Path(im_path)
-            assert im_path.exists()
+            assert im_path.exists(), f'cannot find image {im_path}'
+            self.parent.im_path = im_path
             im = cv2.imread(str(im_path))
             self.parent.im = im
 
@@ -754,7 +760,42 @@ class OverViewer(GenericViewer):
         """
         Saves a text file with grid coord info for each selected degen axon
         """
-        raise NotImplementedError('saving not yet set up')
+        # raise NotImplementedError('saving not yet set up')
+
+        if self.grid_rects.any():
+            save_name = self.parent.im_path.stem
+
+            # get save path
+            save_path = QtWidgets.QFileDialog.getSaveFileName(self, 'Save coordinates', save_name,
+                                                                     filter='JSON (*.json);;'\
+                                                                            'All files (*)')[0]
+            if not save_path:
+                return
+
+            grid_out = self.grid_rects.copy()
+
+            def add_to_tuple(t, dx, dy):
+                t = tuple(map(round, t))
+                a, b, c, d = t
+                return (a+dx, b+dy, c, d)
+
+            for idx, i in enumerate(self.grid_rects):
+                dx = self.spacing * idx
+
+                for idx2, j in enumerate(i):
+                    dy = self.spacing * idx2
+
+                    if j is not None:
+                        grid_out[idx, idx2] = [add_to_tuple(k, dx, dy) for k in j]
+
+            with open(save_path, 'w') as f:
+
+                out = [i for i in grid_out.flatten() if i is not None]
+                out = list(chain.from_iterable(out))
+
+                json.dump(out, f, indent=2)
+                # print(json.dumps(out))
+
 
     def on_button_load(self):
         """
@@ -978,6 +1019,9 @@ class SelectorViewer(GenericViewer):
 
                 ov = self.parent.overview
                 del(ov.grid_rects[ov.grid_coord][idx])
+                if not ov.grid_rects[ov.grid_coord]:
+                    ov.grid_rects[ov.grid_coord] = None
+
                 self.rects_changed.emit()
 
                 self.selected_rect = None
@@ -1089,6 +1133,7 @@ class SelectedViewer:
             self.layout_grid.addWidget(pixmap, row, col)  # two per row
             # self.layout_grid.addWidget(pixmap)
 
+        print(self.parent.overview.grid_rects, end='\n\n')
 
 class GridSegmentItem(pg.GraphicsObject):
     """
