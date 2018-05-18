@@ -543,11 +543,13 @@ class ImageWidget(pg.GraphicsLayoutWidget):
         """
         Updates the viewer to an image
 
+        :param im:
+        :param clear:
         :return:
         """
         self.viewer.setImage(im)
 
-        # TODO: figure out aesthetics here
+        # TODO: figure out aesthetics here to get rid of border
         # x, y = im.shape[:2]
         # self.plot.setLimits(xMin=0,
         #                     xMax=self.viewer.width(),
@@ -745,10 +747,9 @@ class OverViewer(GenericViewer):
 
         # move to next not done grid
         # but first get current position
-        order = 'F'
-        start = np.ravel_multi_index(self.grid_coord, self.grid_flags.shape, order=order)
+        start = np.ravel_multi_index(self.grid_coord, self.grid_flags.shape, order='F')
 
-        r = self.grid_flags.ravel(order=order)
+        r = self.grid_flags.ravel(order='F')
         idx = np.where(r == False)[0]  # idxs of Trues
 
         try:
@@ -758,7 +759,7 @@ class OverViewer(GenericViewer):
 
         idx = idx[i]  # first idx greater that start
 
-        idx = np.unravel_index(idx, (self.grid_flags.shape), order=order)
+        idx = np.unravel_index(idx, (self.grid_flags.shape), order='F')
 
         old_coord = self.grid_coord
         self.grid_coord = idx
