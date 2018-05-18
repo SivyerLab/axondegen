@@ -804,9 +804,10 @@ class OverViewer(GenericViewer):
         """
         if self.grid_rects.any():
             save_name = self.parent.im_path.stem
+            save_dir = self.parent.im_path.parents[0] / save_name
 
             # get save path
-            save_path = QtWidgets.QFileDialog.getSaveFileName(self, 'Save coordinates', save_name,
+            save_path = QtWidgets.QFileDialog.getSaveFileName(self, 'Save coordinates', str(save_dir),
                                                                      filter='JSON (*.json);;'\
                                                                             'All files (*)')[0]
             if not save_path:
@@ -816,7 +817,6 @@ class OverViewer(GenericViewer):
 
             with open(save_path, 'w') as f:
                 json.dump(out, f, indent=2)
-
 
     def on_button_load(self):
         """
