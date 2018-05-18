@@ -201,7 +201,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.checkbox_result = QtWidgets.QCheckBox('show result')
         self.checkbox_result.toggled.connect(self.on_checkbox_result)
 
-        self.image_viewer = GenericViewer(self)
+        self.image_viewer = AllViewer(self)
         # hackish bad fix
         self.image_viewer.sizeHint = lambda: QtCore.QSize(600, 600)
 
@@ -584,6 +584,8 @@ class GenericViewer(ImageWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
 
+        self.rects = []
+
     def set_im(self, im=None, clear=True):
         """
         Updates the viewer to an image
@@ -623,6 +625,49 @@ class GenericViewer(ImageWidget):
         im_coords = self.viewer.mapFromScene(pos)
         x, y = im_coords.x(), im_coords.y()
         self.parent.status_mouse.setText('x:{:4.0f} | y:{:4.0f} '.format(x, y))
+
+    def clear_rects(self):
+        """
+        Clears out the currently drawn selections
+        """
+        vb = self.viewer.getViewBox()
+        for rect in self.rects:
+            vb.removeItem(rect)
+
+        self.rects = []
+
+    def draw_rect(self, rect):
+        """
+        Draws the permanent rect that stays after the end of the drag event
+        """
+        # just reuse viewbox items instead of recreating our own
+        vb = self.viewer.getViewBox()
+
+        grid_rect = QtGui.QGraphicsRectItem(*rect)
+        grid_rect.setPen(pg.mkPen((255,0,100), width=1))
+        grid_rect.setBrush(pg.mkBrush(255,0,0,50))
+        grid_rect.setZValue(1e9)
+        grid_rect.show()
+        vb.addItem(grid_rect, ignoreBounds=True)
+
+        self.rects.append(grid_rect)
+
+
+class AllViewer(GenericViewer):
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.parent.selector.rects_changed.connect(self.update_selections)
+
+    def update_selections(self):
+        """
+        draws grids
+        """
+        to_draw = self.parent.overview.grid_rects_to_ar()
+
+        self.clear_rects()
+        for rect in to_draw:
+            self.draw_rect(rect)
 
 
 class OverViewer(GenericViewer):
@@ -773,11 +818,11 @@ class OverViewer(GenericViewer):
 
         self.update_grid_fill(old_coord)
 
-    def grid_rects_to_ar(self, grid_rects, spacing):
+    def grid_rects_to_ar(self):
         """
         Converts from the grid rect format to a flattened array of image coords
         """
-        out_grid = grid_rects.copy()
+        out_grid = self.grid_rects.copy()
 
         def add_to_tuple(t, dx, dy):
             t = tuple(map(round, t))
@@ -785,10 +830,10 @@ class OverViewer(GenericViewer):
             return (a+dx, b+dy, c, d)
 
         for idx, i in enumerate(self.grid_rects):
-            dx = spacing * idx
+            dx = self.spacing * idx
 
             for idx2, j in enumerate(i):
-                dy = spacing * idx2
+                dy = self.spacing * idx2
 
                 if j is not None:
                     out_grid[idx, idx2] = [add_to_tuple(k, dx, dy) for k in j]
@@ -813,7 +858,7 @@ class OverViewer(GenericViewer):
             if not save_path:
                 return
 
-            out = self.grid_rects_to_ar(self.grid_rects, self.spacing)
+            out = self.grid_rects_to_ar()
 
             with open(save_path, 'w') as f:
                 json.dump(out, f, indent=2)
@@ -868,7 +913,6 @@ class SelectorViewer(GenericViewer):
 
         self.sub_im = None
 
-        self.rects = []
         self.selected_rect = None
 
         self.viewer.getViewBox().mouseClickEvent = self.on_mouse_click
@@ -902,11 +946,8 @@ class SelectorViewer(GenericViewer):
         """
         Clears out the currently drawn selections
         """
-        vb = self.viewer.getViewBox()
-        for rect in self.rects:
-            vb.removeItem(rect)
+        super().clear_rects()
 
-        self.rects = []
         self.selected_rect = None
 
         self.rects_changed.emit()
