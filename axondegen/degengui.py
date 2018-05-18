@@ -140,28 +140,25 @@ class CentralWidget(QtWidgets.QWidget):
         # setup tabs
         self.tabs = QtWidgets.QTabWidget()
 
-        # viewer tab
-        layout_viewer = self.setup_viewer()
-        self.viewer_tab = QtWidgets.QWidget()
-        self.tabs.addTab(self.viewer_tab, 'Viewer')
-        self.viewer_tab.setLayout(layout_viewer)
-
         # selector tab
         layout_selector = self.setup_selector()
         self.sel_tab = QtWidgets.QWidget()
         self.tabs.addTab(self.sel_tab, 'Select')
         self.sel_tab.setLayout(layout_selector)
 
-        self.image_viewer.set_im(None)
+        # viewer tab
+        layout_viewer = self.setup_viewer()
+        self.viewer_tab = QtWidgets.QWidget()
+        self.tabs.addTab(self.viewer_tab, 'Viewer')
+        self.viewer_tab.setLayout(layout_viewer)
 
-        # right side controls
-        layout_controls = self.setup_controls()
+        self.image_viewer.set_im(None)
 
         # top level layout
         layout_frame = QtWidgets.QHBoxLayout()
 
         layout_frame.addWidget(self.tabs)
-        layout_frame.addLayout(layout_controls)
+        # layout_frame.addLayout(layout_controls)
 
         self.setLayout(layout_frame)
         self.show()
@@ -222,7 +219,16 @@ class CentralWidget(QtWidgets.QWidget):
 
         viewer_splitter.addLayout(button_splitter)
 
-        return viewer_splitter
+        # right side controls
+        layout_controls = self.setup_controls()
+
+        # viewer layout
+        layout_viewer = QtWidgets.QHBoxLayout()
+
+        layout_viewer.addLayout(viewer_splitter)
+        layout_viewer.addLayout(layout_controls)
+
+        return layout_viewer
 
     def setup_controls(self):
         """
@@ -767,6 +773,31 @@ class OverViewer(GenericViewer):
 
         self.update_grid_fill(old_coord)
 
+    def grid_rects_to_ar(self, grid_rects, spacing):
+        """
+        Converts from the grid rect format to a flattened array of image coords
+        """
+        out_grid = grid_rects.copy()
+
+        def add_to_tuple(t, dx, dy):
+            t = tuple(map(round, t))
+            a, b, c, d = t
+            return (a+dx, b+dy, c, d)
+
+        for idx, i in enumerate(self.grid_rects):
+            dx = spacing * idx
+
+            for idx2, j in enumerate(i):
+                dy = spacing * idx2
+
+                if j is not None:
+                    out_grid[idx, idx2] = [add_to_tuple(k, dx, dy) for k in j]
+
+        out_grid = [i for i in out_grid.flatten() if i is not None]
+        out_grid = list(chain.from_iterable(out_grid))
+
+        return out_grid
+
     def on_button_save(self):
         """
         Saves a text file with grid coord info for each selected degen axon
@@ -781,27 +812,9 @@ class OverViewer(GenericViewer):
             if not save_path:
                 return
 
-            grid_out = self.grid_rects.copy()
-
-            def add_to_tuple(t, dx, dy):
-                t = tuple(map(round, t))
-                a, b, c, d = t
-                return (a+dx, b+dy, c, d)
-
-            for idx, i in enumerate(self.grid_rects):
-                dx = self.spacing * idx
-
-                for idx2, j in enumerate(i):
-                    dy = self.spacing * idx2
-
-                    if j is not None:
-                        grid_out[idx, idx2] = [add_to_tuple(k, dx, dy) for k in j]
+            out = self.grid_rects_to_ar(self.grid_rects, self.spacing)
 
             with open(save_path, 'w') as f:
-
-                out = [i for i in grid_out.flatten() if i is not None]
-                out = list(chain.from_iterable(out))
-
                 json.dump(out, f, indent=2)
 
 
