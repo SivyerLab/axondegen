@@ -15,7 +15,7 @@ import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
 # from flowlayout import FlowLayout
 
-from imageprocess import ImageProcess
+# from imageprocess import ImageProcess
 
 __author__ = 'Alexander Tomlinson'
 __email__ = 'tomlinsa@ohsu.edu'
@@ -402,24 +402,25 @@ class CentralWidget(QtWidgets.QWidget):
 
         :return:
         """
-        self.im_process = ImageProcess(self.im)
-
-        # get mask
-        m = self.im_process.get_degen_mask('dt', thresh=self.thresh_value)
-        c = self.im_process.get_centroids(m, min_dist=30)
-
-        self.centers = c
-
-        self.status_count.setText('Count: {} '.format(len(c)))
-
-        if self.current_view == 'binary':
-            self.image_viewer.set_im(self.im_process.thresh)
-        elif self.current_view == 'method':
-            self.image_viewer.set_im(self.im_process.method)
-        elif self.current_view == 'result':
-            self.image_viewer.set_im(self.im_process.result)
-
-        self.image_viewer.plot_centers(self.centers)
+        pass
+        # self.im_process = ImageProcess(self.im)
+        #
+        # # get mask
+        # m = self.im_process.get_degen_mask('dt', thresh=self.thresh_value)
+        # c = self.im_process.get_centroids(m, min_dist=30)
+        #
+        # self.centers = c
+        #
+        # self.status_count.setText('Count: {} '.format(len(c)))
+        #
+        # if self.current_view == 'binary':
+        #     self.image_viewer.set_im(self.im_process.thresh)
+        # elif self.current_view == 'method':
+        #     self.image_viewer.set_im(self.im_process.method)
+        # elif self.current_view == 'result':
+        #     self.image_viewer.set_im(self.im_process.result)
+        #
+        # self.image_viewer.plot_centers(self.centers)
 
     def on_checkbox_method(self):
         """
@@ -596,9 +597,13 @@ class GenericViewer(ImageWidget):
         :return:
         """
         if im is None:
-            im_path = r'..\docs\sample_data\slide01_section1_area08.tif'
-            im_path = Path(im_path)
-            assert im_path.exists(), f'cannot find image {im_path}'
+            try:
+                im_path = r'..\docs\sample_data\slide01_section1_area08.tif'
+                im_path = Path(im_path)
+                assert im_path.exists(), f'cannot find image {im_path}'
+            except AssertionError:
+                return
+
             self.parent.im_path = im_path
             im = imread(str(im_path))
             im = np.stack((im,) * 3, -1)
