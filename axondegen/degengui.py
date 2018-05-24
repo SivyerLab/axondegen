@@ -9,8 +9,8 @@ import traceback as tb
 from pathlib import Path
 from itertools import chain
 
-import cv2
 import numpy as np
+from scipy.misc import imread
 import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
 # from flowlayout import FlowLayout
@@ -389,7 +389,10 @@ class CentralWidget(QtWidgets.QWidget):
 
         self.im_path = im_path
 
-        self.im = cv2.imread(str(im_path))
+        im = imread(str(im_path))
+        im = np.stack((im,)*3, -1)
+        self.im = im
+
 
         self.image_viewer.set_im(self.im)
 
@@ -597,7 +600,8 @@ class GenericViewer(ImageWidget):
             im_path = Path(im_path)
             assert im_path.exists(), f'cannot find image {im_path}'
             self.parent.im_path = im_path
-            im = cv2.imread(str(im_path))
+            im = imread(str(im_path))
+            im = np.stack((im,) * 3, -1)
             self.parent.im = im
 
         if clear:
