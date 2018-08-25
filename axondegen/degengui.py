@@ -390,7 +390,11 @@ class CentralWidget(QtWidgets.QWidget):
         self.im_path = im_path
 
         im = imread(str(im_path))
-        im = np.stack((im,)*3, -1)
+
+        # if 2D array (grayscale, not RGB), make 3D RGB
+        if len(im.shape) == 2:
+            im = np.stack((im,)*3, -1)
+
         self.im = im
 
 
