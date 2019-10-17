@@ -9,8 +9,8 @@ import traceback as tb
 from pathlib import Path
 from itertools import chain
 
+from PIL import Image
 import numpy as np
-from scipy.misc import imread
 import pyqtgraph as pg
 from PyQt5 import QtWidgets, QtCore, QtGui
 # from flowlayout import FlowLayout
@@ -188,109 +188,19 @@ class CentralWidget(QtWidgets.QWidget):
         """
         Sets up right pane with viewer
 
-        :return: layout with viewer and related controls
+        :return: layout with viewer
         """
-        viewer_splitter = QtWidgets.QVBoxLayout()
-
-        self.checkbox_binary = QtWidgets.QCheckBox('show binary')
-        self.checkbox_binary.toggled.connect(self.on_checkbox_binary)
-
-        self.checkbox_method = QtWidgets.QCheckBox('show method')
-        self.checkbox_method.toggled.connect(self.on_checkbox_method)
-
-        self.checkbox_result = QtWidgets.QCheckBox('show result')
-        self.checkbox_result.toggled.connect(self.on_checkbox_result)
-
         self.image_viewer = AllViewer(self)
         # hackish bad fix
         self.image_viewer.sizeHint = lambda: QtCore.QSize(600, 600)
-
         self.image_viewer.scene().sigMouseMoved.connect(self.image_viewer.on_mouse_move)
         # self.image_viewer.scene().sigMouseClicked.connect(self.on_mouse_click)
 
-        viewer_splitter.addWidget(self.image_viewer)
-
-        button_splitter = QtWidgets.QHBoxLayout()
-
-        button_splitter.addStretch()
-        button_splitter.addWidget(self.checkbox_binary)
-        button_splitter.addWidget(self.checkbox_method)
-        button_splitter.addWidget(self.checkbox_result)
-
-        viewer_splitter.addLayout(button_splitter)
-
-        # right side controls
-        layout_controls = self.setup_controls()
-
         # viewer layout
         layout_viewer = QtWidgets.QHBoxLayout()
-
-        layout_viewer.addLayout(viewer_splitter)
-        layout_viewer.addLayout(layout_controls)
+        layout_viewer.addWidget(self.image_viewer)
 
         return layout_viewer
-
-    def setup_controls(self):
-        """
-        Sets up the controls for the frame
-
-        :return: layout with the controls
-        """
-        # TODO: factor out into separate class?
-
-        # splitter to return
-        layout_control_splitter = QtWidgets.QVBoxLayout()
-
-        # self.checkbox_autolevel = QtWidgets.QCheckBox('check 1')
-        # self.checkbox_autolevel.setChecked(True)
-        # layout_control_splitter.addWidget(self.checkbox_autolevel)
-        # self.checkbox_autolevel.stateChanged.connect(self.on_checkbox_autolevel)
-
-        # self.checkbox_threshold = QtWidgets.QCheckBox('check 2')
-        # self.checkbox_threshold.setChecked(True)
-        # layout_control_splitter.addWidget(self.checkbox_threshold)
-        # self.checkbox_threshold.stateChanged.connect(self.on_checkbox_threshold)
-
-        self.button_find_degen = QtWidgets.QPushButton('find degen')
-        layout_control_splitter.addWidget(self.button_find_degen)
-        self.button_find_degen.clicked.connect(self.on_button_find_degen)
-
-        self.button_overlay = QtWidgets.QPushButton('button 2')
-        layout_control_splitter.addWidget(self.button_overlay)
-        # self.button_overlay.clicked.connect(self.on_button_overlay)
-
-        layout_slider_threshold = self.setup_slider_threshold()
-
-        layout_sliders = QtWidgets.QHBoxLayout()
-        layout_sliders.addLayout(layout_slider_threshold)
-
-        layout_control_splitter.addLayout(layout_sliders)
-
-        layout_control_splitter.setAlignment(QtCore.Qt.AlignTop)
-
-        return layout_control_splitter
-
-    def setup_slider_threshold(self):
-        """
-        Sets up the slider for opacity
-        :return: layout with slider and opacity
-        """
-        self.slider_threshold = QtGui.QSlider(QtCore.Qt.Vertical)
-        self.slider_threshold.setMinimum(0)
-        self.slider_threshold.setMaximum(255)
-        self.slider_threshold.setValue(self.thresh_value)
-        self.slider_threshold.setTickPosition(QtGui.QSlider.TicksRight)
-        self.slider_threshold.setTickInterval(64)
-        self.slider_threshold.valueChanged.connect(self.on_slider_threshold)
-
-        value = self.thresh_value
-        self.label_slider_threshold = QtGui.QLabel('{}'.format(value))
-
-        layout_slider_label = QtGui.QVBoxLayout()
-        layout_slider_label.addWidget(self.slider_threshold)
-        layout_slider_label.addWidget(self.label_slider_threshold)
-
-        return layout_slider_label
 
     def setup_selector(self):
         """
@@ -389,7 +299,7 @@ class CentralWidget(QtWidgets.QWidget):
 
         self.im_path = im_path
 
-        im = imread(str(im_path))
+        im = Image.open(str(im_path))
 
         # if 2D array (grayscale, not RGB), make 3D RGB
         if len(im.shape) == 2:
@@ -597,8 +507,6 @@ class GenericViewer(ImageWidget):
     def set_im(self, im=None, clear=True):
         """
         Updates the viewer to an image
-
-        :return:
         """
         if im is None:
             try:
@@ -609,7 +517,7 @@ class GenericViewer(ImageWidget):
                 return
 
             self.parent.im_path = im_path
-            im = imread(str(im_path))
+            im = Image.open(str(im_path))
             im = np.stack((im,) * 3, -1)
             self.parent.im = im
 
@@ -617,9 +525,9 @@ class GenericViewer(ImageWidget):
             self.scatter.clear()
             self.parent.status_count.setText('Count: {} '.format(0))
 
-            self.parent.checkbox_method.blockSignals(True)
-            self.parent.checkbox_method.setChecked(False)
-            self.parent.checkbox_method.blockSignals(False)
+            # self.parent.checkbox_method.blockSignals(True)
+            # self.parent.checkbox_method.setChecked(False)
+            # self.parent.checkbox_method.blockSignals(False)
 
         super().set_im(im, clear)
 
