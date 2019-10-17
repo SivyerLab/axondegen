@@ -106,7 +106,7 @@ class Frame(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         """
-        Intercept close event to properly shut down camera and thread.
+        Intercept close event to properly shut down.
         :param event:
         """
         super(Frame, self).closeEvent(event)
@@ -300,13 +300,13 @@ class CentralWidget(QtWidgets.QWidget):
         self.im_path = im_path
 
         im = Image.open(str(im_path))
+        im = np.array(im)
 
         # if 2D array (grayscale, not RGB), make 3D RGB
         if len(im.shape) == 2:
             im = np.stack((im,)*3, -1)
 
         self.im = im
-
 
         self.image_viewer.set_im(self.im)
 
@@ -518,16 +518,13 @@ class GenericViewer(ImageWidget):
 
             self.parent.im_path = im_path
             im = Image.open(str(im_path))
+            im = np.array(im)
             im = np.stack((im,) * 3, -1)
             self.parent.im = im
 
         if clear:
             self.scatter.clear()
             self.parent.status_count.setText('Count: {} '.format(0))
-
-            # self.parent.checkbox_method.blockSignals(True)
-            # self.parent.checkbox_method.setChecked(False)
-            # self.parent.checkbox_method.blockSignals(False)
 
         super().set_im(im, clear)
 
@@ -600,7 +597,7 @@ class OverViewer(GenericViewer):
         super().__init__(parent=parent)
 
         self.grid_coord = (0, 0)
-        # self.spacing = 550
+        # default spacing
         self.spacing = 784
 
         self.grid = None
@@ -616,11 +613,31 @@ class OverViewer(GenericViewer):
         :return:
         """
         self.viewer.setImage(self.parent.im)
+        m = max(self.parent.im.shape)
+        self.spacing = self.get_spacing(m)
         self.draw_grid()
 
         self.grid_flags = np.full((self.grid.num_y, self.grid.num_x), fill_value=False, dtype=bool)
         self.grid_rects = np.empty((self.grid.num_y, self.grid.num_x), dtype=np.ndarray)
         # self.selected = np.array((self.grid.num_y, self.grid.num_x, 1), dtype=list)
+
+    def get_spacing(self, s):
+        """
+        Attempts to find the best spacing, a hacky minimize
+        :param s: max dimension of image
+        :return: spacing
+        """
+        best = (800, s % 800)
+
+        for i in range(800, 500, -1):
+            m = s % i
+            if m == 0:
+                return i
+            else:
+                if m > best[1]:
+                    best = (i, m)
+
+        return best[0]
 
     def draw_grid(self):
         """
@@ -635,16 +652,17 @@ class OverViewer(GenericViewer):
         self.grid = GridSegmentItem(spacing_x, spacing_y, width, height)
         self.plot.addItem(self.grid)
 
-        if self.grid_fills is None:
-            self.grid_fills = np.empty((self.grid.num_y, self.grid.num_x), dtype=object)
+        if self.grid_fills is not None:
+            for i in range(self.grid_fills.shape[0]):
+                for j in range(self.grid_fills.shape[1]):
+                    self.plot.removeItem(self.grid_fills[i, j])
+
+        self.grid_fills = np.empty((self.grid.num_y, self.grid.num_x), dtype=object)
 
         for i in range(self.grid.num_y):
             for j in range(self.grid.num_x):
-                self.plot.removeItem(self.grid_fills[i, j])
-
                 self.grid_fills[i, j] = RectangleItem((i, j), self.spacing, (height, width),
-                                                      fillcolor='r')
-
+                                                          fillcolor='r')
                 self.plot.addItem(self.grid_fills[i, j])
 
         self.grid_coord = (0, 0)
@@ -1176,6 +1194,7 @@ class SelectedViewer:
             # self.layout_grid.addWidget(pixmap)
 
         # print(self.parent.overview.grid_rects, end='\n\n')
+
 
 class GridSegmentItem(pg.GraphicsObject):
     """
