@@ -2,20 +2,18 @@
 Test of gui
 """
 
+import json
 import logging
 import sys
-import json
 import traceback as tb
-from pathlib import Path
 from itertools import chain
+from pathlib import Path
+from random import randint
 
-from PIL import Image
 import numpy as np
 import pyqtgraph as pg
+from PIL import Image
 from PyQt5 import QtWidgets, QtCore, QtGui
-# from flowlayout import FlowLayout
-
-# from imageprocess import ImageProcess
 
 __author__ = 'Alexander Tomlinson'
 __email__ = 'tomlinsa@ohsu.edu'
@@ -129,6 +127,7 @@ class CentralWidget(QtWidgets.QWidget):
         self.centers = None
 
         self.current_view = 'im'
+        self.is_random = False
 
         self.thresh_value = 125
         self.fx_value = 6
@@ -182,7 +181,11 @@ class CentralWidget(QtWidgets.QWidget):
         file_open = QtWidgets.QAction('Open', self, statusTip='Open image in viewer', shortcut='Ctrl+O')
         file_open.triggered.connect(self.on_menu_file_open)
 
+        file_random_open = QtWidgets.QAction('Random Open', self, statusTip='Open random set of images in viewer')
+        file_random_open.triggered.connect(self.on_file_random_open)
+
         menu_file.addAction(file_open)
+        menu_file.addAction(file_random_open)
 
     def setup_viewer(self):
         """
@@ -285,7 +288,7 @@ class CentralWidget(QtWidgets.QWidget):
 
     def on_menu_file_open(self):
         """
-        Handles opening excel files
+        Handles opening of images
         """
         im_path = QtWidgets.QFileDialog.getOpenFileName(self, 'Open image',
                                                                     filter='TIF (*.tif);;'\
@@ -309,136 +312,41 @@ class CentralWidget(QtWidgets.QWidget):
         self.im = im
 
         self.image_viewer.set_im(self.im)
+        self.is_random = False
 
-    def on_button_find_degen(self):
+    def on_file_random_open(self):
         """
-        Handles getting degenerated centers
-
-        :return:
+        Handles random open of images in top level dir
         """
-        pass
-        # self.im_process = ImageProcess(self.im)
-        #
-        # # get mask
-        # m = self.im_process.get_degen_mask('dt', thresh=self.thresh_value)
-        # c = self.im_process.get_centroids(m, min_dist=30)
-        #
-        # self.centers = c
-        #
-        # self.status_count.setText('Count: {} '.format(len(c)))
-        #
-        # if self.current_view == 'binary':
-        #     self.image_viewer.set_im(self.im_process.thresh)
-        # elif self.current_view == 'method':
-        #     self.image_viewer.set_im(self.im_process.method)
-        # elif self.current_view == 'result':
-        #     self.image_viewer.set_im(self.im_process.result)
-        #
-        # self.image_viewer.plot_centers(self.centers)
+        folder_path = QtWidgets.QFileDialog.getExistingDirectory(self, 'Open Folder')
 
-    def on_checkbox_method(self):
+        if not folder_path:
+            return
+
+        folder_path = Path(folder_path)
+        assert folder_path.exists()
+
+        filetypes = ['png', 'tif']
+
+        # get all images in the folders
+        ims = []
+        for ext in filetypes:
+            ims += list(folder_path.glob(f'**/*.{ext}'))
+
+        self.build_random_ims(ims)
+        self.is_random = True
+
+    def build_random_ims(self, ims):
         """
-        Handles switching to method view
-
-        :return:
+        Sets up the logic for handling sub images from different images
+        :param ims: list of iamges
         """
-        if self.checkbox_method.isChecked():
-            if self.im_process is not None:
-                if self.im_process.method is not None:
-                    self.image_viewer.set_im(self.im_process.method, clear=False)
+        square_size = 10
+        im_size = 750
 
-                    self.checkbox_binary.blockSignals(True)
-                    self.checkbox_binary.setChecked(False)
-                    self.checkbox_binary.blockSignals(False)
-
-                    self.checkbox_result.blockSignals(True)
-                    self.checkbox_result.setChecked(False)
-                    self.checkbox_result.blockSignals(False)
-
-                    self.current_view = 'method'
-
-                    return
-
-            self.checkbox_method.blockSignals(True)
-            self.checkbox_method.setChecked(False)
-            self.checkbox_method.blockSignals(False)
-
-        else:
-            self.image_viewer.set_im(self.im, clear=False)
-            self.current_view = 'im'
-
-    def on_checkbox_binary(self):
-        """
-        Handles switching to method view
-
-        :return:
-        """
-        if self.checkbox_binary.isChecked():
-            if self.im_process is not None:
-                if self.im_process.thresh is not None:
-                    self.image_viewer.set_im(self.im_process.thresh, clear=False)
-
-                    self.checkbox_method.blockSignals(True)
-                    self.checkbox_method.setChecked(False)
-                    self.checkbox_method.blockSignals(False)
-
-                    self.checkbox_result.blockSignals(True)
-                    self.checkbox_result.setChecked(False)
-                    self.checkbox_result.blockSignals(False)
-
-                    self.current_view = 'binary'
-
-                    return
-
-            self.checkbox_binary.blockSignals(True)
-            self.checkbox_binary.setChecked(False)
-            self.checkbox_binary.blockSignals(False)
-
-        else:
-            self.image_viewer.set_im(self.im, clear=False)
-            self.current_view = 'im'
-
-    def on_checkbox_result(self):
-        """
-        Handles switching to result view
-
-        :return:
-        """
-        if self.checkbox_result.isChecked():
-            if self.im_process is not None:
-                if self.im_process.result is not None:
-                    self.image_viewer.set_im(self.im_process.result, clear=False)
-
-                    self.checkbox_binary.blockSignals(True)
-                    self.checkbox_binary.setChecked(False)
-                    self.checkbox_binary.blockSignals(False)
-
-                    self.checkbox_method.blockSignals(True)
-                    self.checkbox_method.setChecked(False)
-                    self.checkbox_method.blockSignals(False)
-
-                    self.current_view = 'result'
-
-                    return
-
-            self.checkbox_result.blockSignals(True)
-            self.checkbox_result.setChecked(False)
-            self.checkbox_result.blockSignals(False)
-
-        else:
-            self.image_viewer.set_im(self.im, clear=False)
-            self.current_view = 'im'
-
-    def on_slider_threshold(self):
-        """
-        Changes the opacity of the overlay
-        """
-        value = self.slider_threshold.value()
-        self.thresh_value = value
-
-        self.label_slider_threshold.setText('{}'.format(value))
-
-        self.on_button_find_degen()
+        random_im_dict = {
+            k: v
+        }
 
 
 class ImageWidget(pg.GraphicsLayoutWidget):
@@ -804,10 +712,8 @@ class OverViewer(GenericViewer):
 
     def on_button_load(self):
         """
-        Saves a text file with grid coord info for each selected degen axon
+        Load a text file with grid coord info for each selected degen axon
         """
-        # raise NotImplementedError('loading not yet set up')
-
         load_path = QtWidgets.QFileDialog.getOpenFileName(self, 'Open image',
                                                                 filter='JSON (*.json);;'\
                                                                 'All files (*)')[0]
@@ -833,8 +739,11 @@ class OverViewer(GenericViewer):
 
         self.parent.selector.clear_rects()
 
+        # reset grid flags and redraw the grid
         self.grid_flags = np.full((self.grid.num_y, self.grid.num_x), fill_value=False, dtype=bool)
         self.draw_grid()
+
+        # reset grid rects and add rects
         self.grid_rects = np.empty((self.grid.num_y, self.grid.num_x), dtype=np.ndarray)
 
         for idx, rect in zip(idxs, data):
