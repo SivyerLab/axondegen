@@ -3,3 +3,4 @@ pyqtgraph
 opencv-python
 numpy
 scipy
+pillow
