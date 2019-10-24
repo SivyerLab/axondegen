@@ -336,17 +336,53 @@ class CentralWidget(QtWidgets.QWidget):
         self.build_random_ims(ims)
         self.is_random = True
 
-    def build_random_ims(self, ims):
+    def build_random_ims(self, ims, grid_size=4, subim_size=800):
         """
         Sets up the logic for handling sub images from different images
-        :param ims: list of iamges
-        """
-        square_size = 10
-        im_size = 750
 
-        random_im_dict = {
-            k: v
-        }
+        :param ims: list of images
+        """
+        # build an image where each subim is a random square from an image in image list
+        empty_im = np.empty((subim_size * grid_size, subim_size * grid_size, 3), dtype=np.uint8)
+
+        # keep track of where rand ims come from
+        self.random_im_dict = {}
+
+        for i in range(grid_size):
+            for j in range(grid_size):
+                # randomly pick an image and open it
+                im_path = ims[randint(0, len(ims)-1)]
+
+                im = Image.open(str(im_path))
+                im = np.array(im)
+
+                # if 2D array (grayscale, not RGB), make 3D RGB
+                if len(im.shape) == 2:
+                    im = np.stack((im,)*3, -1)
+
+                # pick random subsection
+                im_size = (im.shape[0] - subim_size, im.shape[1] - subim_size)
+                x0, y0 = randint(0, im_size[0]), randint(0, im_size[1])
+
+                sub_im = im[
+                    x0:x0 + subim_size,
+                    y0:y0 + subim_size,
+                ]
+
+                empty_im[
+                    i * subim_size: i * subim_size + subim_size,
+                    j * subim_size: j * subim_size + subim_size,
+                ] = sub_im
+
+                # save in dict
+                self.random_im_dict[(i, j)] = {
+                    'path': im_path,
+                    'size': (subim_size, subim_size),
+                    'top_left': (x0, y0),
+                }
+
+        self.im = empty_im
+        self.image_viewer.set_im(self.im)
 
 
 class ImageWidget(pg.GraphicsLayoutWidget):
