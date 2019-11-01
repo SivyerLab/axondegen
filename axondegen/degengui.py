@@ -325,6 +325,7 @@ class CentralWidget(QtWidgets.QWidget):
 
         folder_path = Path(folder_path)
         assert folder_path.exists()
+        self.im_path = folder_path
 
         filetypes = ['png', 'tif']
 
@@ -365,8 +366,8 @@ class CentralWidget(QtWidgets.QWidget):
                 x0, y0 = randint(0, im_size[0]), randint(0, im_size[1])
 
                 sub_im = im[
-                    x0:x0 + subim_size,
                     y0:y0 + subim_size,
+                    x0:x0 + subim_size,
                 ]
 
                 empty_im[
@@ -375,7 +376,7 @@ class CentralWidget(QtWidgets.QWidget):
                 ] = sub_im
 
                 # save in dict
-                self.random_im_dict[(i, j)] = {
+                self.random_im_dict[(j, i)] = {
                     'path': im_path,
                     'size': (subim_size, subim_size),
                     'top_left': (x0, y0),
@@ -731,20 +732,48 @@ class OverViewer(GenericViewer):
         Saves a text file with grid coord info for each selected degen axon
         """
         if self.grid_rects.any():
-            save_name = self.parent.im_path.stem
-            save_dir = self.parent.im_path.parents[0] / save_name
+            if not self.parent.is_random:
 
-            # get save path
-            save_path = QtWidgets.QFileDialog.getSaveFileName(self, 'Save coordinates', str(save_dir),
-                                                                     filter='JSON (*.json);;'\
-                                                                            'All files (*)')[0]
-            if not save_path:
-                return
+                save_name = self.parent.im_path.stem
+                save_dir = self.parent.im_path.parents[0] / save_name
 
-            out = self.grid_rects_to_ar()
+                # get save path
+                save_path = QtWidgets.QFileDialog.getSaveFileName(self, 'Save coordinates', str(save_dir),
+                                                                         filter='JSON (*.json);;'\
+                                                                                'All files (*)')[0]
+                if not save_path:
+                    return
 
-            with open(save_path, 'w') as f:
-                json.dump(out, f, indent=2)
+                out = self.grid_rects_to_ar()
+
+                with open(save_path, 'w') as f:
+                    json.dump(out, f, indent=2)
+
+            else:
+
+                for loc, meta in self.parent.random_im_dict.items():
+                    if self.grid_rects[loc] is not None:
+
+                        save_path = meta['path'].parent / (meta['path'].stem + '.json')
+
+                        if save_path.exists():
+                            with open(save_path, 'r') as f:
+                                adj_coords = json.load(f)
+                        else:
+                            adj_coords = []
+
+                        coords = self.grid_rects[loc]
+                        coords = [list(map(round, coord)) for coord in coords]
+
+                        # adjust for randomness
+                        for coord in coords:
+                            x, y, dx, dy = coord
+                            adj_x, adj_y = meta['top_left']
+                            adj_coord = [x + adj_x, y + adj_y, dx, dy]
+                            adj_coords.append(adj_coord)
+
+                        with open(save_path, 'w') as f:
+                            json.dump(adj_coords, f, indent=2)
 
     def on_button_load(self):
         """
