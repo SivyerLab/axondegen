@@ -9,6 +9,8 @@ import traceback as tb
 from itertools import chain
 from pathlib import Path
 from random import randint
+import itertools as it
+from ast import literal_eval
 
 import numpy as np
 import pyqtgraph as pg
@@ -47,6 +49,17 @@ def except_hook(type, value, traceback, frame):
     frame.show_traceback(type, value, traceback)
 
     sys.__excepthook__(type, value, traceback)
+
+
+class TupleEncoder(json.JSONEncoder):
+    """
+    Custom encoding for tuples
+    """
+    def default(self, obj):
+        if isinstance(obj, tuple):
+            return str(tuple)
+        # Let the base class default method raise the TypeError
+        return json.JSONEncoder.default(self, obj)
 
 
 class Frame(QtWidgets.QMainWindow):
@@ -334,36 +347,133 @@ class CentralWidget(QtWidgets.QWidget):
         for ext in filetypes:
             ims += list(folder_path.glob(f'**/*.{ext}'))
 
-        self.build_random_ims(ims)
-        self.is_random = True
+        # check if folder has status saved or not
+        json_status = self.im_path / 'random_status.json'
+        if json_status.exists():
+            self.load_random_status(json_status)
+        else:
+            self.build_random_status(ims)
 
-    def build_random_ims(self, ims, grid_size=4, subim_size=800):
+        # make a dict for looking up path objects for simplicity
+        self.random_lookup = {
+            im.name: im
+            for im in ims
+        }
+
+        self.is_random = True
+        self.load_random_ims()
+
+    def save_random_status(self):
+        """
+        Saves a json of the random progress
+        """
+        save_path = self.im_path / 'random_status.json'
+
+        json_d = {k: {str(k2): v2 for k2, v2 in v.items()}
+                  for k, v in self.random_status.items()
+                  }
+
+        with open(save_path, 'w') as f:
+            json.dump(json_d, f, indent=2)
+
+    def load_random_status(self, json_path):
+        """
+        Saves a json of the random progress
+        """
+        with open(json_path, 'r') as f:
+            json_d = json.load(f)
+
+        # eval is not safe, use lit eval
+        self.random_status = {k: {literal_eval(k2): v2 for k2, v2 in v.items()}
+                              for k, v in json_d.items()
+                              }
+
+    def build_random_status(self, ims, subim_size=800):
         """
         Sets up the logic for handling sub images from different images
 
         :param ims: list of images
+        :param grid_size:
+        :param subim_size:
         """
-        # build an image where each subim is a random square from an image in image list
+        # keep track of progess
+        self.random_status = {}
+
+        for im in ims:
+            # open is lazy, doesn't load data so should be quick
+            with Image.open(str(im)) as img:
+                h, w = img.size
+                # ensure properly sized
+                if h % subim_size != 0 or w % subim_size != 0:
+                    print(f'Skipped image because it was not properly sized:\n\t{im}')
+                    continue
+
+            self.random_status[im.name] = {}
+            # subdict of tuples of coords with completion status
+            for subim_coord in it.product(range(w // subim_size), range(h // subim_size)):
+                self.random_status[im.name][subim_coord] = False
+
+        self.save_random_status()
+
+    def get_random_incomplete(self):
+        """
+        Returns set of subimages that have yet to be completed
+        :return:
+        """
+        not_done = {k: {k2:v2 for k2, v2 in v.items() if not v2}
+                    for k, v in self.random_status.items()
+                    }
+
+        # drop empty dicts
+        not_done = {k: v for k, v in not_done.items() if v}
+
+        flattened = []
+        for k, v in not_done.items():
+            flattened.extend([(k, v2) for v2 in v.keys()])
+
+        return flattened
+
+    def load_random_ims(self, grid_size=4, subim_size=800):
+        """
+        From progress loads images into slots
+
+        :param ims:
+        :param grid_size:
+        :param subim_size:
+        :return:
+        """
+        # make the empty image to be filled in
         empty_im = np.empty((subim_size * grid_size, subim_size * grid_size, 3), dtype=np.uint8)
+
+        # get not done
+        todo = self.get_random_incomplete()
 
         # keep track of where rand ims come from
         self.random_im_dict = {}
 
         for i in range(grid_size):
             for j in range(grid_size):
-                # randomly pick an image and open it
-                im_path = ims[randint(0, len(ims)-1)]
 
-                im = Image.open(str(im_path))
+                # in case not enough to fill grid
+                if not todo:
+                    continue
+
+                # randomly pick an image and open it
+                idx = randint(0, len(todo)-1)
+                im_path, subim_coord = todo[idx]
+                im_path = self.random_lookup[im_path]
+
+                del todo[idx]
+
+                im = Image.open(im_path)
                 im = np.array(im)
 
                 # if 2D array (grayscale, not RGB), make 3D RGB
                 if len(im.shape) == 2:
                     im = np.stack((im,)*3, -1)
 
-                # pick random subsection
-                im_size = (im.shape[0] - subim_size, im.shape[1] - subim_size)
-                x0, y0 = randint(0, im_size[0]), randint(0, im_size[1])
+                # get subsection
+                x0, y0 = subim_coord[0] * subim_size, subim_coord[1] * subim_size,
 
                 sub_im = im[
                     y0:y0 + subim_size,
@@ -380,6 +490,7 @@ class CentralWidget(QtWidgets.QWidget):
                     'path': im_path,
                     'size': (subim_size, subim_size),
                     'top_left': (x0, y0),
+                    'sub_coord': subim_coord
                 }
 
         self.im = empty_im
@@ -678,6 +789,8 @@ class OverViewer(GenericViewer):
 
         if self.grid_flags.all():
             self.on_button_save()
+            if self.parent.is_random:
+                self.parent.load_random_ims()
             return
 
         # move to next not done grid
@@ -752,6 +865,7 @@ class OverViewer(GenericViewer):
             else:
 
                 for loc, meta in self.parent.random_im_dict.items():
+
                     if self.grid_rects[loc] is not None:
 
                         save_path = meta['path'].parent / (meta['path'].stem + '.json')
@@ -774,6 +888,16 @@ class OverViewer(GenericViewer):
 
                         with open(save_path, 'w') as f:
                             json.dump(adj_coords, f, indent=2)
+
+        if self.parent.is_random:
+
+            for loc, meta in self.parent.random_im_dict.items():
+                # first update the status
+                if self.grid_flags[loc]:
+                    self.parent.random_status[meta['path'].name][meta['sub_coord']] = True
+                    pass
+
+            self.parent.save_random_status()
 
     def on_button_load(self):
         """
@@ -1037,6 +1161,26 @@ class SelectorViewer(GenericViewer):
                 self.color_rects(self.rects, 'red')
                 self.selected_rect = None
 
+    def del_rect(self, idx):
+        """
+        deletes a rect
+
+        :param idx:
+        :return:
+        """
+        assert idx < len(self.rects), 'out of bounds'
+        if idx == -1:
+            assert self.rects, 'out of bounds'
+
+        del self.rects[idx]
+
+        ov = self.parent.overview
+        del (ov.grid_rects[ov.grid_coord][idx])
+        if not ov.grid_rects[ov.grid_coord]:
+            ov.grid_rects[ov.grid_coord] = None
+
+        self.rects_changed.emit()
+
     def on_key_press(self, ev):
         """
         Hijacks key press event
@@ -1046,19 +1190,16 @@ class SelectorViewer(GenericViewer):
                 idx = self.rects.index(self.selected_rect)
 
                 self.viewer.getViewBox().removeItem(self.selected_rect)
-                del(self.rects[idx])
-
-                ov = self.parent.overview
-                del(ov.grid_rects[ov.grid_coord][idx])
-                if not ov.grid_rects[ov.grid_coord]:
-                    ov.grid_rects[ov.grid_coord] = None
-
-                self.rects_changed.emit()
-
                 self.selected_rect = None
+
+                self.del_rect(idx)
 
         if ev.key() == QtCore.Qt.Key_Space:
             self.parent.overview.on_button_done()
+
+        elif ev.key() == QtCore.Qt.Key_Z and QtCore.Qt.Key_Control:
+            # self.del_rect(-1)
+            print('Sorry, still working on this.')
 
     def on_mouse_drag(self, ev, axis=None):
         """
@@ -1277,7 +1418,7 @@ def main():
     frame = Frame()
 
     # catch errors into error dialog
-    sys.excepthook = lambda x, y, z: except_hook(x, y, z, frame)
+    # sys.excepthook = lambda x, y, z: except_hook(x, y, z, frame)
 
     sys.exit(app.exec_())
 
