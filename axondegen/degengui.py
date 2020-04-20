@@ -13,6 +13,7 @@ import itertools as it
 from ast import literal_eval
 
 import numpy as np
+import pandas as pd
 import pyqtgraph as pg
 from PIL import Image
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -197,8 +198,13 @@ class CentralWidget(QtWidgets.QWidget):
         file_random_open = QtWidgets.QAction('Random Open', self, statusTip='Open random set of images in viewer')
         file_random_open.triggered.connect(self.on_file_random_open)
 
+        file_gen_excel = QtWidgets.QAction('Generate excel', self, statusTip='Generate spreadsheet of random '
+                                                                             'coordinates')
+        file_gen_excel.triggered.connect(self.on_file_gen_excel)
+
         menu_file.addAction(file_open)
         menu_file.addAction(file_random_open)
+        menu_file.addAction(file_gen_excel)
 
     def setup_viewer(self):
         """
@@ -362,6 +368,37 @@ class CentralWidget(QtWidgets.QWidget):
 
         self.is_random = True
         self.load_random_ims()
+
+    def on_file_gen_excel(self):
+        """
+        Generates excel spreadsheet for random coordinates.
+        """
+        if not self.is_random:
+            return
+
+        df = pd.DataFrame()
+
+        jsons = list(self.im_path.glob('**/*.json'))
+        for saved_coords in jsons:
+            if saved_coords.name == 'random_status.json':
+                continue
+            with open(saved_coords, 'r') as f:
+                temp_df = pd.DataFrame(json.load(f))
+                temp_df['image'] = saved_coords.name
+
+                df = df.append(temp_df)
+
+        df.columns = ['x', 'y', 'dx', 'dy', 'image']
+        df = df[['image', 'x', 'y', 'dx', 'dy']]
+
+        save_path = QtWidgets.QFileDialog.getSaveFileName(self, 'Save excel', str(self.im_path),
+                                                          filter='Excel (*.csv);;' \
+                                                                 'All files (*)')[0]
+
+        if not save_path:
+            return
+
+        df.to_csv(save_path, index=False)
 
     def save_random_status(self):
         """
@@ -618,8 +655,8 @@ class GenericViewer(ImageWidget):
         vb = self.viewer.getViewBox()
 
         grid_rect = QtGui.QGraphicsRectItem(*rect)
-        grid_rect.setPen(pg.mkPen((255,0,100), width=1))
-        grid_rect.setBrush(pg.mkBrush(255,0,0,50))
+        grid_rect.setPen(pg.mkPen((255, 0, 100), width=1))
+        grid_rect.setBrush(pg.mkBrush(255, 0, 0, 50))
         grid_rect.setZValue(1e9)
         grid_rect.show()
         vb.addItem(grid_rect, ignoreBounds=True)
@@ -863,7 +900,6 @@ class OverViewer(GenericViewer):
                     json.dump(out, f, indent=2)
 
             else:
-
                 for loc, meta in self.parent.random_im_dict.items():
 
                     if self.grid_rects[loc] is not None:
@@ -1099,8 +1135,8 @@ class SelectorViewer(GenericViewer):
                 fixed_size[2+i] = spacing[i] - fixed_size[0+i]
 
         grid_rect = QtGui.QGraphicsRectItem(*fixed_size)
-        grid_rect.setPen(pg.mkPen((255,0,100), width=1))
-        grid_rect.setBrush(pg.mkBrush(255,0,0,50))
+        grid_rect.setPen(pg.mkPen((255, 0, 100), width=1))
+        grid_rect.setBrush(pg.mkBrush(255, 0, 0, 25))
         grid_rect.setZValue(1e9)
         grid_rect.show()
         vb.addItem(grid_rect, ignoreBounds=True)

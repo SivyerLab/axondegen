@@ -4,3 +4,4 @@ opencv-python
 numpy
 scipy
 pillow
+pandas
